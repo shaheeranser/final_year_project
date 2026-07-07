@@ -1,0 +1,10 @@
+{
+  "name": "final-year-project",
+  "private": true,
+  "scripts": {
+    "dev": "npx -y concurrently -n client,server -c blue,green \"npm --prefix client run dev\" \"npm --prefix server run dev\"",
+    "build:client": "npm --prefix client run build",
+    "build:server": "npm --prefix server run build",
+    "start": "node server/dist/index.js"
+  }
+}
