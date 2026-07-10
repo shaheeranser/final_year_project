@@ -1,22 +1,28 @@
 services:
   app:
     build: .
+    restart: unless-stopped
     ports:
       - "3000:3000"
-    env_file: .env
+    env_file: server/.env
     depends_on:
       mongo:
         condition: service_healthy
       minio:
         condition: service_healthy
     networks:
-      - default
       - examnet
+    links:
+      - mongo:mongo
+    dns_search: .
 
   mongo:
     image: mongo
+    restart: unless-stopped
     volumes:
       - mongo_data:/data/db
+    networks:
+      - examnet
     healthcheck:
       test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
       interval: 10s
@@ -32,6 +38,8 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    networks:
+      - examnet  # Add this if your app needs to upload media files seamlessly
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
@@ -46,7 +54,9 @@ services:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} && /usr/bin/mc mb --ignore-existing myminio/$${MINIO_BUCKET_NAME} "
-    env_file: .env
+    env_file: server/.env
+    networks:
+      - default
 
   reverse-proxy:
     image: caddy:2-alpine
@@ -59,6 +69,8 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
     depends_on:
       - app
+    networks:
+      - examnet  # Essential if Moodle routes to the app via the proxy domain
 
 volumes:
   mongo_data:

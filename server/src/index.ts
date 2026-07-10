@@ -27,17 +27,63 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
+// ── Process-level crash guards ──────────────────────────────────────
+// Prevent silent death from ltijs's internal reconnection promises or
+// any other unhandled async failure in the MongoDB driver.
+process.on("unhandledRejection", (reason: unknown) => {
+  console.error("⚠  Unhandled promise rejection:", reason);
+  // Do NOT exit — allow Mongoose reconnection attempts to continue.
+});
+
+process.on("uncaughtException", (err: Error) => {
+  console.error("✗  Uncaught exception:", err);
+  // Exit with failure so Docker's restart policy can bring us back clean.
+  process.exit(1);
+});
+
 // ── Initialise ltijs ─────────────────────────────────────────────────
-lti.setup(LTI_ENCRYPTION_KEY, { url: MONGO_URI });
+lti.setup(
+  LTI_ENCRYPTION_KEY,
+  {
+    url: MONGO_URI,
+    connection: {
+      family: 4,                      // Force IPv4 — Docker bridge does not support IPv6
+      serverSelectionTimeoutMS: 5000,  // Fail fast on server selection (default: 30s)
+      socketTimeoutMS: 45000,          // Close idle sockets after 45s (default: 0/infinite)
+      heartbeatFrequencyMS: 10000,     // Check server health every 10s
+      connectTimeoutMS: 10000,         // Initial TCP timeout (overrides ltijs's 300s default)
+      maxPoolSize: 5,                  // Bounded pool for a single-service architecture
+      retryWrites: true,
+      retryReads: true
+    }
+  },
+  {
+    appRoute: "/lti",
+    loginRoute: "/lti/login",
+    keysetRoute: "/lti/keys",
+    devMode: true // Relax cookie restrictions for plain HTTP localhost
+  }
+);
+
+// ── Error Handlers ──────────────────────────────────────────────────
+lti.onInvalidToken(async (_req: express.Request, res: express.Response) => {
+  console.warn("⚠  LTI invalid token received");
+  return res.status(401).send("Invalid LTI Token sequence.");
+});
+
+lti.onUnregisteredPlatform(async (_req: express.Request, res: express.Response) => {
+  console.warn("⚠  LTI request from unregistered platform");
+  return res.status(400).send("Platform registration profile missing.");
+});
 
 // On successful LTI launch, show the verified student's name and role.
-lti.onConnect((token: IdToken, _req, res) => {
+lti.onConnect((token: IdToken, _req: express.Request, res: express.Response) => {
   const name =
     token.userInfo?.name ??
     ([token.userInfo?.given_name, token.userInfo?.family_name]
       .filter(Boolean)
       .join(" ") ||
-    "(name not provided by platform)");
+      "(name not provided by platform)");
 
   const roles = token.platformContext?.roles ?? [];
 
@@ -150,6 +196,28 @@ async function registerPlatformFromEnv(): Promise<void> {
   }
 }
 
+// ── Mongoose connection observability ────────────────────────────────
+// ltijs's Database.js wires its own event handlers using debug() which
+// requires the DEBUG env var to be set. These handlers give us always-on
+// visibility into the connection lifecycle.
+import mongoose from "mongoose";
+
+mongoose.connection.on("connected", () => {
+  console.log("✓  MongoDB connected");
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.warn("⚠  MongoDB disconnected — Mongoose will attempt to reconnect");
+});
+
+mongoose.connection.on("reconnected", () => {
+  console.log("✓  MongoDB reconnected");
+});
+
+mongoose.connection.on("error", (err: Error) => {
+  console.error("✗  MongoDB connection error:", err.message);
+});
+
 // ── Bootstrap ────────────────────────────────────────────────────────
 async function main(): Promise<void> {
   // Deploy ltijs in serverless mode (does not start its own server)
@@ -162,14 +230,19 @@ async function main(): Promise<void> {
   // ── Express app ──────────────────────────────────────────────────
   const app = express();
 
+  // Configure body-parsing middleware before mounting ltijs routes.
+  // Moodle POSTs the LTI 1.3 launch payload via application/x-www-form-urlencoded.
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+
   // Mount ltijs under /lti — all LTI routes are prefixed:
   //   /lti         — launch redirect (app route)
   //   /lti/login   — OIDC login initiation
   //   /lti/keys    — tool's public JWKS
-  app.use("/lti", lti.app);
+  app.use(lti.app);
 
   // ── API routes ─────────────────────────────────────────────────
-  app.get("/api/health", (_req, res) => {
+  app.get("/api/health", (_req: express.Request, res: express.Response) => {
     res.json({ status: "ok" });
   });
 
@@ -182,13 +255,13 @@ async function main(): Promise<void> {
 
     // Catch-all: any non-API request returns index.html so that
     // React Router can handle client-side routes like /student/* and /teacher/*.
-    app.get("/{*splat}", (_req, res) => {
+    app.get("/{*splat}", (_req: express.Request, res: express.Response) => {
       res.sendFile(path.join(clientDist, "index.html"));
     });
   } else {
     // In development, the Vite dev server handles the frontend.
     // See README.md for how to run both servers side-by-side.
-    app.get("/", (_req, res) => {
+    app.get("/", (_req: express.Request, res: express.Response) => {
       res.send(
         "Server is running in development mode. " +
         "Start the Vite dev server in client/ with `npm run dev` for the frontend. " +
