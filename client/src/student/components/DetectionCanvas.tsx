@@ -18,16 +18,16 @@ interface DetectionCanvasProps {
   height: number;
 }
 
-/** Colour map for different detection labels */
+/** Colour map for different detection labels using the new serious palette */
 const LABEL_COLORS: Record<string, string> = {
-  'cell phone': '#ff4d6a',
-  book: '#ff9f43',
-  laptop: '#ee5a24',
-  head_pose: '#a55eea',
-  eye_gaze: '#3dc1d3',
+  'cell phone': '#B3492B', // alert
+  book: '#B3492B',
+  laptop: '#B3492B',
+  head_pose: '#5B84D1', // accent (dark mode equivalent or similar)
+  eye_gaze: '#5B84D1',
 };
 
-const DEFAULT_COLOR = '#ffc312';
+const DEFAULT_COLOR = '#B3492B';
 
 export function DetectionCanvas({
   detections,
@@ -57,7 +57,7 @@ export function DetectionCanvas({
 
         // Label background
         const label = `${det.label} (${Math.round(det.confidence * 100)}%)`;
-        ctx.font = '13px Inter, sans-serif';
+        ctx.font = '13px "IBM Plex Mono", monospace';
         const textMetrics = ctx.measureText(label);
         const textHeight = 18;
         const pad = 4;
@@ -94,7 +94,7 @@ export function DetectionCanvas({
 
         // Label text
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 13px Inter, sans-serif';
+        ctx.font = 'bold 13px "IBM Plex Mono", monospace';
         ctx.fillText(flag.label.replace('_', ' ').toUpperCase(), width - 138, y + 4);
       }
     }

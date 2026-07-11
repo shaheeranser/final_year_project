@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Layout, Spinner } from '../../shared/components';
+import { Layout, Spinner, StatusRail } from '../../shared/components';
 import { DetectionCanvas } from '../components/DetectionCanvas';
 import { useDetectionWorker } from '../hooks/useDetectionWorker';
 import { useViolationAggregator } from '../hooks/useViolationAggregator';
@@ -32,6 +32,9 @@ export function ExamPage() {
   const [terminationReason, setTerminationReason] = useState<'strikes' | 'tab_switch'>('strikes');
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+
+  // Fake timer for demonstration purposes (60 minutes)
+  const [timeLeft, setTimeLeft] = useState(3600);
 
   // Video dimensions
   const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
@@ -149,6 +152,15 @@ export function ExamPage() {
     }
   }, [workerReady, cameraReady, status, startDetection]);
 
+  // ── Fake Timer ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (status !== 'active' && status !== 'warning') return;
+    const interval = setInterval(() => {
+      setTimeLeft(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [status]);
+
   // ── Warning acknowledgement ───────────────────────────────────────
   const handleAcknowledge = useCallback(() => {
     setStatus('active');
@@ -163,15 +175,24 @@ export function ExamPage() {
 
   // The video element MUST always be mounted so that videoRef.current
   // is available when the camera useEffect runs (even during loading).
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   return (
     <Layout
       header={
         status !== 'loading' ? (
           <div className="exam-header">
-            <h1 className="exam-header__title">Exam Session</h1>
-            <div className="exam-header__status">
-              <span className="exam-header__dot exam-header__dot--active" />
-              Monitoring Active
+            <h1 className="exam-header__title" style={{ fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-lg)', flex: '0 0 auto', marginRight: 'var(--space-2xl)' }}>Exam Session</h1>
+            <div style={{ flex: 1, maxWidth: '400px' }}>
+              <StatusRail 
+                status={status === 'warning' ? 'warning' : 'active'}
+                progress={(timeLeft / 3600) * 100}
+                label={formatTime(timeLeft)}
+              />
             </div>
           </div>
         ) : undefined

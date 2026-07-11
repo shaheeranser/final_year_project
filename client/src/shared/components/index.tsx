@@ -1,4 +1,5 @@
 import type React from 'react';
+import { ThemeToggle } from './ThemeToggle';
 
 /* ── Button ─────────────────────────────────────────────────────────── */
 
@@ -63,7 +64,12 @@ interface LayoutProps {
 export function Layout({ children, header }: LayoutProps) {
   return (
     <div className="layout">
-      {header && <header className="layout__header">{header}</header>}
+      <header className="layout__header">
+        <div style={{ flex: 1 }}>{header}</div>
+        <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'var(--space-md)' }}>
+          <ThemeToggle />
+        </div>
+      </header>
       <main className="layout__main">{children}</main>
     </div>
   );
@@ -83,3 +89,8 @@ export function Spinner({ label }: SpinnerProps) {
     </div>
   );
 }
+
+/* ── Exports for New Components ─────────────────────────────────────── */
+export { ThemeProvider } from './ThemeProvider';
+export { ThemeToggle } from './ThemeToggle';
+export { StatusRail } from './StatusRail';
