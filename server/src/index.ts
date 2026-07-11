@@ -1,7 +1,15 @@
 import "dotenv/config";
+import dns from "node:dns";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Force IPv4-first DNS resolution globally.
+// Docker's embedded DNS returns both IPv6 (AAAA) and IPv4 (A) records for
+// container aliases. Node 18+'s "Happy Eyeballs" algorithm tries IPv6 first,
+// but Docker bridge networks don't route IPv6 between containers, causing
+// an immediate ECONNREFUSED before the valid IPv4 address is attempted.
+dns.setDefaultResultOrder("ipv4first");
 import ltiPkg from "ltijs";
 
 import type { IdToken } from "ltijs";
@@ -173,6 +181,9 @@ async function registerPlatformFromEnv(): Promise<void> {
   }
 
   try {
+    // Force delete the existing platform config from the DB so it picks up the new endpoints
+    await lti.deletePlatform(url, clientId);
+    
     await lti.registerPlatform({
       url,
       name: "Moodle",
@@ -185,6 +196,19 @@ async function registerPlatformFromEnv(): Promise<void> {
       },
     });
     console.log(`✓  LTI platform registered: ${url} (clientId: ${clientId})`);
+    
+    // DEBUG: Test the keyset endpoint connectivity
+    try {
+      const keysetUrl = new URL(keysetEndpoint);
+      console.log(`DEBUG: Resolving DNS for ${keysetUrl.hostname}...`);
+      const addresses = await dns.promises.lookup(keysetUrl.hostname, { all: true });
+      console.log(`DEBUG: DNS resolved to:`, JSON.stringify(addresses));
+      console.log(`DEBUG: Testing keyset fetch to ${keysetEndpoint}`);
+      const res = await fetch(keysetEndpoint);
+      console.log(`DEBUG: Keyset fetch status: ${res.status}`);
+    } catch (err) {
+      console.error("DEBUG: Keyset connectivity test failed:", err);
+    }
   } catch (err) {
     // registerPlatform throws if the platform is already registered — that's fine.
     const message = err instanceof Error ? err.message : String(err);
@@ -230,21 +254,23 @@ async function main(): Promise<void> {
   // ── Express app ──────────────────────────────────────────────────
   const app = express();
 
-  // Configure body-parsing middleware before mounting ltijs routes.
-  // Moodle POSTs the LTI 1.3 launch payload via application/x-www-form-urlencoded.
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  // Create an isolated router instance for our existing custom system
+  const apiRouter = express.Router();
+  apiRouter.use(express.json());
+  apiRouter.use(express.urlencoded({ extended: true }));
 
-  // Mount ltijs under /lti — all LTI routes are prefixed:
-  //   /lti         — launch redirect (app route)
-  //   /lti/login   — OIDC login initiation
-  //   /lti/keys    — tool's public JWKS
-  app.use(lti.app);
-
-  // ── API routes ─────────────────────────────────────────────────
-  app.get("/api/health", (_req: express.Request, res: express.Response) => {
+  // Re-register our existing health route safely under the API namespace
+  apiRouter.get("/health", (_req: express.Request, res: express.Response) => {
     res.json({ status: "ok" });
   });
+
+  // Mount the API router onto the server BEFORE mounting ltijs
+  app.use("/api", apiRouter);
+
+  // Mount ltijs at the root level.
+  // Because the body parsers are locked behind /api, the incoming LTI POST stream
+  // from Moodle passes to ltijs completely untouched and readable.
+  app.use(lti.app);
 
   // ── Frontend serving ───────────────────────────────────────────
   if (isProd) {

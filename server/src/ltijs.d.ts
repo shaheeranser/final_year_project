@@ -102,6 +102,8 @@ declare module "ltijs" {
 
     static registerPlatform(config: PlatformConfig): Promise<unknown>;
 
+    static deletePlatform(url: string, clientId: string): Promise<boolean | void>;
+
     static onConnect(callback: OnConnectCallback): void;
 
     static onInvalidToken(callback: ErrorHookCallback): void;

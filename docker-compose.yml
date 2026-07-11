@@ -5,6 +5,8 @@ services:
     ports:
       - "3000:3000"
     env_file: server/.env
+    environment:
+      - DEBUG=provider:*
     depends_on:
       mongo:
         condition: service_healthy
@@ -12,8 +14,11 @@ services:
         condition: service_healthy
     networks:
       - examnet
+      - moodle-docker_default
     links:
       - mongo:mongo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     dns_search: .
 
   mongo:
@@ -81,4 +86,6 @@ volumes:
 networks:
   default:
   examnet:
+    external: true
+  moodle-docker_default:
     external: true
