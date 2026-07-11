@@ -84,83 +84,21 @@ lti.onUnregisteredPlatform(async (_req: express.Request, res: express.Response) 
   return res.status(400).send("Platform registration profile missing.");
 });
 
-// On successful LTI launch, show the verified student's name and role.
+// On successful LTI launch, redirect based on role.
 lti.onConnect((token: IdToken, _req: express.Request, res: express.Response) => {
-  const name =
-    token.userInfo?.name ??
-    ([token.userInfo?.given_name, token.userInfo?.family_name]
-      .filter(Boolean)
-      .join(" ") ||
-      "(name not provided by platform)");
-
   const roles = token.platformContext?.roles ?? [];
 
-  // Map full IMS role URIs to short human-readable labels
-  const friendlyRoles = roles.map((r) => {
-    if (r.includes("#Learner") || r.includes("#Student")) return "Student";
-    if (r.includes("#Instructor") || r.includes("#Teacher")) return "Instructor";
-    if (r.includes("#Administrator") || r.includes("#Admin")) return "Admin";
-    if (r.includes("#TeachingAssistant")) return "Teaching Assistant";
-    return r; // fallback: show the raw URI
-  });
+  const isTeacher = roles.some(
+    (r) => r.includes("#Instructor") || r.includes("#Teacher")
+  );
 
-  const roleText = friendlyRoles.length > 0 ? friendlyRoles.join(", ") : "(no roles)";
-
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>LTI Launch Success</title>
-      <style>
-        body {
-          font-family: system-ui, -apple-system, sans-serif;
-          display: flex; align-items: center; justify-content: center;
-          min-height: 100vh; margin: 0;
-          background: #f0f4f8; color: #1a202c;
-        }
-        .card {
-          background: #fff; border-radius: 12px; padding: 2rem 2.5rem;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-          max-width: 480px; width: 100%;
-        }
-        h1 { margin: 0 0 0.25rem; font-size: 1.5rem; color: #2d3748; }
-        .subtitle { color: #718096; margin: 0 0 1.5rem; font-size: 0.9rem; }
-        dl { margin: 0; }
-        dt { font-weight: 600; color: #4a5568; margin-top: 1rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; }
-        dd { margin: 0.25rem 0 0; font-size: 1.1rem; }
-        .check { color: #38a169; }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <h1><span class="check">✓</span> LTI Launch Verified</h1>
-        <p class="subtitle">Identity confirmed via LTI 1.3 handshake</p>
-        <dl>
-          <dt>Name</dt>
-          <dd>${escapeHtml(name)}</dd>
-          <dt>Role</dt>
-          <dd>${escapeHtml(roleText)}</dd>
-          <dt>User ID</dt>
-          <dd><code>${escapeHtml(token.user ?? "(unknown)")}</code></dd>
-          <dt>Issuer</dt>
-          <dd><code>${escapeHtml(token.iss ?? "(unknown)")}</code></dd>
-        </dl>
-      </div>
-    </body>
-    </html>
-  `);
+  if (isTeacher) {
+    lti.redirect(res, "/teacher");
+  } else {
+    lti.redirect(res, "/student");
+  }
 });
 
-/** Basic HTML-entity escaping for dynamic values rendered into HTML. */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
 // ── Platform registration ────────────────────────────────────────────
 async function registerPlatformFromEnv(): Promise<void> {
@@ -267,21 +205,45 @@ async function main(): Promise<void> {
   // Mount the API router onto the server BEFORE mounting ltijs
   app.use("/api", apiRouter);
 
+  // ── Frontend Static Assets ───────────────────────────────────────
+  // Serve static assets BEFORE ltijs to prevent the session validator from
+  // blocking requests for .js, .css, etc. which don't carry an ltik.
+  const clientDist = path.resolve(__dirname, "../../client/dist");
+  if (isProd) {
+    app.use(express.static(clientDist));
+  }
+
   // Mount ltijs at the root level.
   // Because the body parsers are locked behind /api, the incoming LTI POST stream
   // from Moodle passes to ltijs completely untouched and readable.
   app.use(lti.app);
 
-  // ── Frontend serving ───────────────────────────────────────────
+  // ── Protected API routes ───────────────────────────────────────
+  // These routes are mounted after lti.app, so they are protected by ltijs's sessionValidator.
+  // The frontend must pass the `ltik` in the Authorization header: `Bearer <ltik>`
+  app.get("/api/session/me", (_req: express.Request, res: express.Response) => {
+    const token = res.locals.token as IdToken | undefined;
+    if (!token) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const roles = token.platformContext?.roles ?? [];
+    const isTeacher = roles.some(
+      (r) => r.includes("#Instructor") || r.includes("#Teacher")
+    );
+
+    res.json({
+      userId: token.user,
+      name: token.userInfo?.name ?? "Unknown User",
+      role: isTeacher ? "teacher" : "student",
+    });
+  });
+
+  // ── Frontend Catch-all ─────────────────────────────────────────
   if (isProd) {
-    // In production, serve the pre-built Vite output from client/dist.
-    const clientDist = path.resolve(__dirname, "../../client/dist");
-
-    app.use(express.static(clientDist));
-
     // Catch-all: any non-API request returns index.html so that
     // React Router can handle client-side routes like /student/* and /teacher/*.
-    app.get("/{*splat}", (_req: express.Request, res: express.Response) => {
+    app.get("/*splat", (_req: express.Request, res: express.Response) => {
       res.sendFile(path.join(clientDist, "index.html"));
     });
   } else {

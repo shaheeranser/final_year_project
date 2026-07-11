@@ -106,6 +106,8 @@ declare module "ltijs" {
 
     static onConnect(callback: OnConnectCallback): void;
 
+    static redirect(res: Response, path: string, options?: unknown): void | Promise<void>;
+
     static onInvalidToken(callback: ErrorHookCallback): void;
 
     static onUnregisteredPlatform(callback: ErrorHookCallback): void;
