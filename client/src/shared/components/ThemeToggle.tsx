@@ -1,12 +1,14 @@
 import { useTheme } from './ThemeProvider';
+import { Button } from './index';
 
 export function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
 
   return (
-    <button
+    <Button
+      variant="ghost"
+      size="sm"
       onClick={toggleTheme}
-      className="btn btn--ghost btn--sm"
       aria-label="Toggle theme"
       style={{ fontFamily: 'var(--font-sans)', display: 'inline-flex', alignItems: 'center', gap: 'var(--space-sm)' }}
     >
@@ -33,6 +35,6 @@ export function ThemeToggle() {
           <span>Light Mode</span>
         </>
       )}
-    </button>
+    </Button>
   );
 }

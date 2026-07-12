@@ -11,8 +11,10 @@ import { fileURLToPath } from "node:url";
 // an immediate ECONNREFUSED before the valid IPv4 address is attempted.
 dns.setDefaultResultOrder("ipv4first");
 import ltiPkg from "ltijs";
-
 import type { IdToken } from "ltijs";
+import quizRoutes from "./routes/quizRoutes.js";
+import healthRoutes from "./routes/healthRoutes.js";
+import sessionRoutes from "./routes/sessionRoutes.js";
 
 const { Provider: lti } = ltiPkg;
 
@@ -192,18 +194,10 @@ async function main(): Promise<void> {
   // ── Express app ──────────────────────────────────────────────────
   const app = express();
 
-  // Create an isolated router instance for our existing custom system
-  const apiRouter = express.Router();
-  apiRouter.use(express.json());
-  apiRouter.use(express.urlencoded({ extended: true }));
-
   // Re-register our existing health route safely under the API namespace
-  apiRouter.get("/health", (_req: express.Request, res: express.Response) => {
-    res.json({ status: "ok" });
-  });
-
-  // Mount the API router onto the server BEFORE mounting ltijs
-  app.use("/api", apiRouter);
+  // We do NOT mount body parsers here because ltijs uses its own body-parser internally
+  // and Express 5's body parser conflicts with ltijs's Express 4 body parser.
+  app.use("/api/health", healthRoutes);
 
   // ── Frontend Static Assets ───────────────────────────────────────
   // Serve static assets BEFORE ltijs to prevent the session validator from
@@ -221,23 +215,9 @@ async function main(): Promise<void> {
   // ── Protected API routes ───────────────────────────────────────
   // These routes are mounted after lti.app, so they are protected by ltijs's sessionValidator.
   // The frontend must pass the `ltik` in the Authorization header: `Bearer <ltik>`
-  app.get("/api/session/me", (_req: express.Request, res: express.Response) => {
-    const token = res.locals.token as IdToken | undefined;
-    if (!token) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const roles = token.platformContext?.roles ?? [];
-    const isTeacher = roles.some(
-      (r) => r.includes("#Instructor") || r.includes("#Teacher")
-    );
-
-    res.json({
-      userId: token.user,
-      name: token.userInfo?.name ?? "Unknown User",
-      role: isTeacher ? "teacher" : "student",
-    });
-  });
+  
+  app.use("/api/quizzes", quizRoutes);
+  app.use("/api/session", sessionRoutes);
 
   // ── Frontend Catch-all ─────────────────────────────────────────
   if (isProd) {

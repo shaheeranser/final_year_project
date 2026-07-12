@@ -59,6 +59,7 @@ p {
   cursor: pointer;
   transition: all var(--transition-fast);
   white-space: nowrap;
+  min-height: 44px; /* Touch target minimum */
 }
 
 .btn:focus-visible {
@@ -593,9 +594,15 @@ p {
 
 /* ── Responsive ─────────────────────────────────────────────────────── */
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
   .role-picker__buttons {
     grid-template-columns: 1fr;
+  }
+
+  .exam-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
   }
 
   .exam-page__info {
@@ -606,5 +613,23 @@ p {
 
   .layout__main {
     padding: var(--space-md);
+  }
+
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-md);
+  }
+
+  .dashboard-header__actions {
+    width: 100%;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  /* Make sure inputs and buttons span full width when stacked */
+  .btn {
+    width: 100%;
+    justify-content: center;
   }
 }

@@ -5,23 +5,49 @@
  * Designed as a dense, confident control surface for monitoring sessions.
  */
 
-import { Layout, StatusRail } from '../../shared/components';
-
-const MOCK_SESSIONS = [
-  { id: '1048-A', status: 'active' as const, progress: 85, label: '00:12:45 remaining' },
-  { id: '1048-B', status: 'active' as const, progress: 60, label: '00:30:10 remaining' },
-  { id: '1048-C', status: 'warning' as const, progress: 95, label: 'Flagged: cell phone' },
-  { id: '1048-D', status: 'terminated' as const, progress: 100, label: 'Terminated (2 strikes)' },
-  { id: '1048-E', status: 'neutral' as const, progress: 0, label: 'Not started' },
-];
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Layout, StatusRail, Spinner, Button } from '../../shared/components';
+import { createOrGetDraftQuiz, getQuizAttempts } from '../../shared/api/quiz';
 
 export function Dashboard() {
+  const [quiz, setQuiz] = useState<any>(null);
+  const [attempts, setAttempts] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadData() {
+      try {
+        const q = await createOrGetDraftQuiz();
+        setQuiz(q);
+        const att = await getQuizAttempts(q.resourceLinkId);
+        setAttempts(att);
+        setLoading(false);
+      } catch (err: any) {
+        setError(err.message);
+        setLoading(false);
+      }
+    }
+    loadData();
+  }, []);
+
+  if (loading) return <Spinner label="Loading Dashboard..." />;
+  if (error) return <div className="dashboard-content"><p style={{color: 'var(--color-danger)'}}>{error}</p></div>;
+
   return (
     <Layout
       header={
-        <div className="dashboard-header">
-          <h1 className="dashboard-header__title" style={{ fontFamily: 'var(--font-serif)' }}>Session Monitoring</h1>
-          <span className="dashboard-header__badge">Live</span>
+        <div className="dashboard-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <h1 className="dashboard-header__title" style={{ fontFamily: 'var(--font-serif)', display: 'inline-block', marginRight: 'var(--space-sm)' }}>{quiz?.title || 'Session Monitoring'}</h1>
+            {quiz && <span className="dashboard-header__badge">{quiz.status.toUpperCase()}</span>}
+          </div>
+          <div>
+            <Link to="/teacher/quiz-builder" className="btn btn--primary">
+              Create/Edit Quiz
+            </Link>
+          </div>
         </div>
       }
     >
@@ -37,31 +63,37 @@ export function Dashboard() {
             </div>
           </div>
           
-          {MOCK_SESSIONS.map((session, i) => (
-            <div 
-              key={session.id} 
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                padding: 'var(--space-md) var(--space-lg)', 
-                borderBottom: i < MOCK_SESSIONS.length - 1 ? '1px solid var(--color-border)' : 'none'
-              }}
-            >
-              <div style={{ flex: '0 0 120px', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
-                {session.id}
-              </div>
-              <div style={{ flex: 1, paddingLeft: 'var(--space-md)', paddingRight: 'var(--space-xl)' }}>
-                <StatusRail 
-                  status={session.status} 
-                  progress={session.progress} 
-                  label={session.label} 
-                />
-              </div>
-              <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
-                <button className="btn btn--ghost btn--sm" style={{ fontFamily: 'var(--font-sans)' }}>Review</button>
-              </div>
+          {attempts.length === 0 ? (
+            <div style={{ padding: 'var(--space-2xl) var(--space-lg)', textAlign: 'center', color: 'var(--color-ink-muted)' }}>
+              <p style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)' }}>No student attempts yet for this quiz.</p>
             </div>
-          ))}
+          ) : (
+            attempts.map((session, i) => (
+              <div 
+                key={session.id} 
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: 'var(--space-md) var(--space-lg)', 
+                  borderBottom: i < attempts.length - 1 ? '1px solid var(--color-border)' : 'none'
+                }}
+              >
+                <div style={{ flex: '0 0 120px', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>
+                  {session.id}
+                </div>
+                <div style={{ flex: 1, paddingLeft: 'var(--space-md)', paddingRight: 'var(--space-xl)' }}>
+                  <StatusRail 
+                    status={session.status} 
+                    progress={session.progress} 
+                    label={session.label} 
+                  />
+                </div>
+                <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
+                  <Button variant="ghost" size="sm" style={{ fontFamily: 'var(--font-sans)' }}>Review</Button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </Layout>
