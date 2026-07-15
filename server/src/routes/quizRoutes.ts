@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import type { Request, Response, NextFunction } from 'express';
-import type { IdToken } from 'ltijs';
+
 import {
   createOrGetDraftQuiz,
   getQuiz,
@@ -8,29 +7,11 @@ import {
   addQuestion,
   updateQuestion,
   deleteQuestion,
-  publishQuiz,
-  getQuizAttempts
+  publishQuiz
 } from '../controllers/quizController.js';
+import { requireTeacher } from '../middleware/auth.js';
 
 const router = Router();
-
-// Middleware to enforce teacher role
-const requireTeacher = (_req: Request, res: Response, next: NextFunction) => {
-  const token = res.locals.token as IdToken | undefined;
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const roles = token.platformContext?.roles ?? [];
-  const isTeacher = roles.some(
-    (r) => r.includes('#Instructor') || r.includes('#Teacher')
-  );
-
-  if (!isTeacher) {
-    return res.status(403).json({ error: 'Forbidden: Teacher role required' });
-  }
-
-  next();
-};
 
 router.use(requireTeacher);
 
@@ -55,7 +36,5 @@ router.delete('/:resourceLinkId/questions/:questionId', deleteQuestion);
 // POST /api/quizzes/:resourceLinkId/publish
 router.post('/:resourceLinkId/publish', publishQuiz);
 
-// GET /api/quizzes/:resourceLinkId/attempts
-router.get('/:resourceLinkId/attempts', getQuizAttempts);
 
 export default router;

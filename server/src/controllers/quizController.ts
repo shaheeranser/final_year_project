@@ -237,13 +237,3 @@ export const publishQuiz = async (req: Request, res: Response) => {
   }
 };
 
-export const getQuizAttempts = async (_req: Request, res: Response) => {
-  try {
-    // const { resourceLinkId } = _req.params;
-    // Stub for now. We will implement the state machine and db collection later.
-    res.json([]);
-  } catch (error) {
-    console.error('Error in getQuizAttempts:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};

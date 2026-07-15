@@ -13,6 +13,7 @@ dns.setDefaultResultOrder("ipv4first");
 import ltiPkg from "ltijs";
 import type { IdToken } from "ltijs";
 import quizRoutes from "./routes/quizRoutes.js";
+import attemptRoutes from "./routes/attemptRoutes.js";
 import healthRoutes from "./routes/healthRoutes.js";
 import sessionRoutes from "./routes/sessionRoutes.js";
 
@@ -216,6 +217,7 @@ async function main(): Promise<void> {
   // These routes are mounted after lti.app, so they are protected by ltijs's sessionValidator.
   // The frontend must pass the `ltik` in the Authorization header: `Bearer <ltik>`
   
+  app.use("/api", attemptRoutes);
   app.use("/api/quizzes", quizRoutes);
   app.use("/api/session", sessionRoutes);
 

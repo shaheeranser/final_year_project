@@ -5,3 +5,5 @@ dist/
 coverage/
 *.log
 moodle-dev/
+docs/
+.kiro/

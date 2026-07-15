@@ -16,5 +16,6 @@ export const getSessionMe = (_req: Request, res: Response) => {
     userId: token.user,
     name: token.userInfo?.name ?? "Unknown User",
     role: isTeacher ? "teacher" : "student",
+    resourceLinkId: token.platformContext?.resource?.id,
   });
 };

@@ -7,11 +7,17 @@
 
 interface TerminatedScreenProps {
   /** Reason the exam was terminated */
-  reason: 'strikes' | 'tab_switch';
+  reason: string;
 }
 
 export function TerminatedScreen({ reason }: TerminatedScreenProps) {
-  const isTabSwitch = reason === 'tab_switch';
+  const getReasonMessage = () => {
+    if (reason === 'tab_switch') return 'You switched away from the exam tab. This is not permitted during an active exam session.';
+    if (reason === 'camera_lost') return 'We lost connection to your camera or face visibility. This is not permitted.';
+    if (reason === 'multiple_people') return 'Multiple people were detected in your camera feed. This is not permitted.';
+    if (reason === 'time_expired') return 'Your exam time has expired.';
+    return 'You have exceeded the maximum number of allowed warnings. Your exam session has been terminated.';
+  };
 
   return (
     <div className="terminated-screen">
@@ -24,9 +30,7 @@ export function TerminatedScreen({ reason }: TerminatedScreenProps) {
         </div>
         <h1 className="terminated-screen__title" style={{ fontFamily: 'var(--font-serif)' }}>Exam Terminated</h1>
         <p className="terminated-screen__reason">
-          {isTabSwitch
-            ? 'You switched away from the exam tab. This is not permitted during an active exam session.'
-            : 'You have exceeded the maximum number of allowed warnings. Your exam session has been terminated.'}
+          {getReasonMessage()}
         </p>
         <div className="terminated-screen__divider" />
         <p className="terminated-screen__instructions">

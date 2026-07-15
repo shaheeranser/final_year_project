@@ -12,51 +12,73 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Layout, Spinner, StatusRail } from '../../shared/components';
+import { Layout, Spinner, StatusRail, Button } from '../../shared/components';
 import { DetectionCanvas } from '../components/DetectionCanvas';
 import { useDetectionWorker } from '../hooks/useDetectionWorker';
 import { useViolationAggregator } from '../hooks/useViolationAggregator';
 import { useVisibilityGuard } from '../hooks/useVisibilityGuard';
+import { usePresenceLossGuard } from '../hooks/usePresenceLossGuard';
+import { useMultiplePersonGuard } from '../hooks/useMultiplePersonGuard';
 import { WarningOverlay } from './WarningOverlay';
 import { TerminatedScreen } from './TerminatedScreen';
+import { reportIncident, submitAttempt } from '../../shared/api/attempt';
+import { captureSnapshot } from '../lib/snapshot';
 
-type ExamStatus = 'loading' | 'active' | 'warning' | 'terminated';
+type ExamStatus = 'loading' | 'active' | 'warning' | 'terminated' | 'submitted';
 
-export function ExamPage() {
+export function ExamPage({ attemptId }: { attemptId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [status, setStatus] = useState<ExamStatus>('loading');
   const [strikes, setStrikes] = useState(0);
   const [lastFlag, setLastFlag] = useState<string>('');
-  const [terminationReason, setTerminationReason] = useState<'strikes' | 'tab_switch'>('strikes');
+  const [terminationReason, setTerminationReason] = useState<string>('strikes');
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Fake timer for demonstration purposes (60 minutes)
   const [timeLeft, setTimeLeft] = useState(3600);
-
-  // Video dimensions
   const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
 
-  // ── Violation callback ────────────────────────────────────────────
-  const handleViolation = useCallback(
-    (flag: string) => {
-      setStrikes((prev) => {
-        const next = prev + 1;
-        setLastFlag(flag);
-
-        if (next >= 2) {
-          setTerminationReason('strikes');
+  // ── Incident Reporting ────────────────────────────────────────────
+  const report = useCallback(
+    async (flagType: string, severity: 'soft' | 'hard') => {
+      let snapshot = null;
+      if (videoRef.current) {
+        snapshot = captureSnapshot(videoRef.current);
+      }
+      try {
+        const attempt = await reportIncident(attemptId, {
+          flagType,
+          severity,
+          occurredAt: new Date().toISOString(),
+          snapshotImage: snapshot || undefined,
+        });
+        
+        if (attempt.status === 'terminated') {
+          setTerminationReason(attempt.terminationReason || flagType);
           setStatus('terminated');
         } else {
-          setStatus('warning');
+          setStrikes(attempt.strikeCount);
         }
-
-        return next;
-      });
+      } catch (err) {
+        console.error('Failed to report incident', err);
+      }
     },
-    [],
+    [attemptId],
+  );
+
+  // ── Violation callback (Soft) ──────────────────────────────────────
+  const handleViolation = useCallback(
+    (flag: string) => {
+      setLastFlag(flag);
+      if (status !== 'warning' && status !== 'terminated') {
+        setStatus('warning');
+        report(flag, 'soft');
+      }
+    },
+    [status, report],
   );
 
   // ── Hooks ─────────────────────────────────────────────────────────
@@ -77,18 +99,42 @@ export function ExamPage() {
     onDetections: processDetections,
   });
 
-  // Tab-switch guard — terminate immediately
+  // Tab-switch guard (Hard)
   useVisibilityGuard({
     enabled: status === 'active' || status === 'warning',
     onHidden: useCallback(() => {
       setTerminationReason('tab_switch');
       setStatus('terminated');
-    }, []),
+      report('tab_switch', 'hard');
+    }, [report]),
   });
 
-  // ── Stop detection on termination ──────────────────────────────────
+  // Presence loss guard (Hard)
+  usePresenceLossGuard({
+    detections,
+    enabled: status === 'active',
+    onCameraLost: useCallback(() => {
+      setTerminationReason('camera_lost');
+      setStatus('terminated');
+      report('camera_lost', 'hard');
+    }, [report])
+  });
+
+  // Multiple people guard (Hard)
+  useMultiplePersonGuard({
+    detections,
+    enabled: status === 'active',
+    onMultiplePeople: useCallback(() => {
+      setTerminationReason('multiple_people');
+      setStatus('terminated');
+      report('multiple_people', 'hard');
+    }, [report])
+  });
+
+
+  // ── Stop detection on termination or submission ────────────────────
   useEffect(() => {
-    if (status === 'terminated') {
+    if (status === 'terminated' || status === 'submitted') {
       stopDetection();
       resetAggregator();
       // Stop webcam stream
@@ -123,8 +169,6 @@ export function ExamPage() {
           if (videoWidth && videoHeight) {
             setVideoDimensions({ width: videoWidth, height: videoHeight });
           }
-
-          // Bind the video element to the detection engine
           setVideo(videoRef.current);
         }
       } catch (err) {
@@ -156,10 +200,30 @@ export function ExamPage() {
   useEffect(() => {
     if (status !== 'active' && status !== 'warning') return;
     const interval = setInterval(() => {
-      setTimeLeft(prev => Math.max(0, prev - 1));
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          setStatus('terminated');
+          setTerminationReason('time_expired');
+          report('time_expired', 'hard');
+          return 0;
+        }
+        return prev - 1;
+      });
     }, 1000);
     return () => clearInterval(interval);
-  }, [status]);
+  }, [status, report]);
+
+  // ── Submit Attempt ────────────────────────────────────────────────
+  const handleSubmit = async () => {
+    try {
+      await submitAttempt(attemptId, []); // empty answers for demo
+      setStatus('submitted');
+    } catch (err) {
+      console.error('Failed to submit attempt', err);
+      alert('Failed to submit exam');
+    }
+  };
 
   // ── Warning acknowledgement ───────────────────────────────────────
   const handleAcknowledge = useCallback(() => {
@@ -168,13 +232,21 @@ export function ExamPage() {
 
   // ── Render ────────────────────────────────────────────────────────
 
-  // Terminated state — full takeover, no video needed
   if (status === 'terminated') {
     return <TerminatedScreen reason={terminationReason} />;
   }
 
-  // The video element MUST always be mounted so that videoRef.current
-  // is available when the camera useEffect runs (even during loading).
+  if (status === 'submitted') {
+    return (
+      <Layout header={<div className="exam-header"><h1>Exam Submitted</h1></div>}>
+        <div style={{ padding: 'var(--space-2xl)', textAlign: 'center' }}>
+          <h2 style={{ color: 'var(--color-success)' }}>Exam submitted successfully!</h2>
+          <p>Your attempt has been recorded.</p>
+        </div>
+      </Layout>
+    );
+  }
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
@@ -185,20 +257,24 @@ export function ExamPage() {
     <Layout
       header={
         status !== 'loading' ? (
-          <div className="exam-header">
-            <h1 className="exam-header__title" style={{ fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-lg)', flex: '0 0 auto', marginRight: 'var(--space-2xl)' }}>Exam Session</h1>
-            <div style={{ flex: 1, maxWidth: '400px' }}>
-              <StatusRail 
-                status={status === 'warning' ? 'warning' : 'active'}
-                progress={(timeLeft / 3600) * 100}
-                label={formatTime(timeLeft)}
-              />
+          <div className="exam-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <h1 className="exam-header__title" style={{ fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-lg)', flex: '0 0 auto', marginRight: 'var(--space-2xl)' }}>Exam Session</h1>
+              <div style={{ minWidth: '400px' }}>
+                <StatusRail 
+                  status={status === 'warning' ? 'warning' : 'active'}
+                  progress={(timeLeft / 3600) * 100}
+                  label={formatTime(timeLeft)}
+                />
+              </div>
+            </div>
+            <div>
+              <Button onClick={handleSubmit} variant="primary">Submit Exam</Button>
             </div>
           </div>
         ) : undefined
       }
     >
-      {/* ── Loading overlay (on top of the hidden video) ─────────── */}
       {status === 'loading' && (
         <div className="exam-loading">
           <Spinner
@@ -226,9 +302,6 @@ export function ExamPage() {
         </div>
       )}
 
-      {/* ── Video + detection canvas — always mounted so videoRef is stable.
-           Hidden during loading with visibility:hidden (not display:none,
-           which would make the video element have 0 dimensions). ───────── */}
       <div
         className="exam-page"
         style={status === 'loading' ? { visibility: 'hidden', position: 'absolute', width: 0, height: 0, overflow: 'hidden' } : undefined}
