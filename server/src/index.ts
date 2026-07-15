@@ -189,6 +189,9 @@ async function main(): Promise<void> {
   await lti.deploy({ serverless: true });
   console.log("✓  ltijs deployed (serverless mode)");
 
+  // Connect Mongoose explicitly for the application models (Quiz, Attempt, Incident)
+  await mongoose.connect(MONGO_URI!);
+
   // Attempt platform registration
   await registerPlatformFromEnv();
 

@@ -11,12 +11,14 @@ import {
   getAttemptDetail,
   reviewAttempt
 } from '../controllers/reviewController.js';
+import { getQuizForStudent } from '../controllers/quizController.js';
 import { requireTeacher } from '../middleware/auth.js';
 
 const router = Router();
 
 // Student-facing routes
 router.get('/quizzes/:resourceLinkId/eligibility', getEligibility);
+router.get('/quizzes/:resourceLinkId/student', getQuizForStudent);
 router.post('/attempts', createAttempt);
 router.post('/attempts/:attemptId/start', startAttempt);
 router.post('/attempts/:attemptId/incidents', reportIncident);

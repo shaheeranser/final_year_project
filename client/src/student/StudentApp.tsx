@@ -46,5 +46,5 @@ export default function StudentApp() {
     );
   }
 
-  return <ExamPage attemptId={attemptId} />;
+  return <ExamPage attemptId={attemptId} resourceLinkId={resourceLinkId} />;
 }

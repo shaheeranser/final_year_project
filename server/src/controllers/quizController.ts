@@ -237,3 +237,37 @@ export const publishQuiz = async (req: Request, res: Response) => {
   }
 };
 
+// Student-facing quiz endpoint — strips correctOptionId
+export const getQuizForStudent = async (req: Request, res: Response) => {
+  try {
+    const { resourceLinkId } = req.params;
+    const quiz = await Quiz.findOne({ resourceLinkId });
+
+    if (!quiz) {
+      return res.status(404).json({ error: 'Quiz not found' });
+    }
+
+    if (quiz.status !== 'published') {
+      return res.status(403).json({ error: 'Quiz is not published' });
+    }
+
+    // Strip correctOptionId so students can't see the answers
+    const sanitisedQuestions = quiz.questions.map(q => ({
+      id: q.id,
+      text: q.text,
+      options: q.options.map(o => ({ id: o.id, text: o.text })),
+      score: q.score,
+    }));
+
+    res.json({
+      resourceLinkId: quiz.resourceLinkId,
+      title: quiz.title,
+      description: quiz.description,
+      attemptDurationMinutes: quiz.attemptDurationMinutes,
+      questions: sanitisedQuestions,
+    });
+  } catch (error) {
+    console.error('Error in getQuizForStudent:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};

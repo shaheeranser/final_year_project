@@ -300,10 +300,199 @@ p {
 
 .exam-page {
   display: flex;
+  gap: var(--space-lg);
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: calc(100vh - 100px);
+}
+
+/* ── Quiz Questions Panel (left) ────────────────────────────────────── */
+
+.exam-page__quiz-panel {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
   flex-direction: column;
   gap: var(--space-lg);
-  max-width: 800px;
-  margin: 0 auto;
+}
+
+.exam-page__question-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-xl);
+  box-shadow: var(--shadow-sm);
+}
+
+.exam-page__question-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-lg);
+}
+
+.exam-page__question-counter {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  color: var(--color-ink-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.exam-page__question-score {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--color-ink-muted);
+  background: var(--color-bg);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+}
+
+.exam-page__question-text {
+  font-family: var(--font-sans);
+  font-size: var(--font-size-lg);
+  line-height: 1.6;
+  color: var(--color-ink);
+  margin-bottom: var(--space-xl);
+}
+
+/* ── Option Buttons ─────────────────────────────────────────────────── */
+
+.exam-page__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xl);
+}
+
+.exam-page__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-bg);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  color: var(--color-ink);
+}
+
+.exam-page__option:hover {
+  border-color: var(--color-ink-muted);
+  background: var(--color-surface);
+}
+
+.exam-page__option--selected {
+  border-color: var(--color-primary, #4f46e5);
+  background: color-mix(in srgb, var(--color-primary, #4f46e5) 8%, var(--color-surface));
+}
+
+.exam-page__option--selected:hover {
+  border-color: var(--color-primary, #4f46e5);
+}
+
+.exam-page__option-letter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  font-weight: 700;
+  font-size: var(--font-size-sm);
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.exam-page__option--selected .exam-page__option-letter {
+  background: var(--color-primary, #4f46e5);
+  border-color: var(--color-primary, #4f46e5);
+  color: #fff;
+}
+
+.exam-page__option-text {
+  flex: 1;
+  line-height: 1.4;
+}
+
+/* ── Question Navigation ────────────────────────────────────────────── */
+
+.exam-page__question-controls {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-md);
+}
+
+/* ── Question Palette ───────────────────────────────────────────────── */
+
+.exam-page__question-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.exam-page__palette-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  color: var(--color-ink-muted);
+}
+
+.exam-page__palette-btn:hover {
+  border-color: var(--color-ink-muted);
+}
+
+.exam-page__palette-btn--current {
+  border-color: var(--color-primary, #4f46e5);
+  background: var(--color-surface);
+  color: var(--color-primary, #4f46e5);
+}
+
+.exam-page__palette-btn--answered {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
+}
+
+.exam-page__palette-btn--current.exam-page__palette-btn--answered {
+  border-color: var(--color-primary, #4f46e5);
+  box-shadow: 0 0 0 2px var(--color-primary, #4f46e5);
+}
+
+/* ── Webcam Sidebar (right) ─────────────────────────────────────────── */
+
+.exam-page__sidebar {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  position: sticky;
+  top: var(--space-lg);
+  align-self: flex-start;
 }
 
 .exam-page__video-container {
@@ -336,9 +525,9 @@ p {
 
 .exam-page__info {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-md) var(--space-lg);
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md);
   background: var(--color-surface);
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
@@ -351,6 +540,7 @@ p {
   font-weight: 500;
   color: var(--color-ink-muted);
   font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
 }
 
 .exam-page__strike-count {
@@ -603,6 +793,17 @@ p {
     flex-direction: column;
     align-items: flex-start;
     gap: var(--space-md);
+  }
+
+  .exam-page {
+    flex-direction: column;
+  }
+
+  .exam-page__sidebar {
+    flex: none;
+    position: static;
+    width: 100%;
+    order: -1; /* Put webcam above questions on mobile */
   }
 
   .exam-page__info {

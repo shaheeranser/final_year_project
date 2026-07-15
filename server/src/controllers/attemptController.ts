@@ -115,6 +115,13 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
       studentUserId
     });
     await newAttempt.save();
+
+    // Lock the quiz for editing once the first student attempt is created
+    if (!quiz.lockedForEditing) {
+      quiz.lockedForEditing = true;
+      await quiz.save();
+    }
+
     res.status(201).json(newAttempt);
 
   } catch (error) {

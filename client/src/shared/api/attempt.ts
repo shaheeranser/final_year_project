@@ -16,6 +16,27 @@ export const checkEligibility = async (resourceLinkId: string): Promise<Eligibil
   return res.json();
 };
 
+export interface StudentQuiz {
+  resourceLinkId: string;
+  title: string;
+  description: string;
+  attemptDurationMinutes: number | null;
+  questions: {
+    id: string;
+    text: string;
+    options: { id: string; text: string }[];
+    score: number;
+  }[];
+}
+
+export const fetchQuizForStudent = async (resourceLinkId: string): Promise<StudentQuiz> => {
+  const res = await fetch(`/api/quizzes/${resourceLinkId}/student`, {
+    headers: getHeaders()
+  });
+  if (!res.ok) throw new Error(`Fetch quiz for student failed: ${res.statusText}`);
+  return res.json();
+};
+
 export const createAttempt = async (quizId: string): Promise<Attempt> => {
   const res = await fetch(`/api/attempts`, {
     method: 'POST',

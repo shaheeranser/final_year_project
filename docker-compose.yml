@@ -59,8 +59,9 @@ services:
       - "9001:9001"
     volumes:
       - minio_data:/data
+    env_file: server/.env
     networks:
-      - examnet  # Add this if your app needs to upload media files seamlessly
+      - examnet
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
       interval: 10s
@@ -77,7 +78,7 @@ services:
       /bin/sh -c " /usr/bin/mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} && /usr/bin/mc mb --ignore-existing myminio/$${MINIO_BUCKET_NAME} "
     env_file: server/.env
     networks:
-      - default
+      - examnet
 
   reverse-proxy:
     image: caddy:2-alpine

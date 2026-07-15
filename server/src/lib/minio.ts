@@ -3,12 +3,26 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-const endPoint = process.env.MINIO_ENDPOINT || 'localhost';
-const port = parseInt(process.env.MINIO_PORT || '9000', 10);
-const useSSL = process.env.MINIO_USE_SSL === 'true';
-const accessKey = process.env.MINIO_ACCESS_KEY || 'minioadmin';
-const secretKey = process.env.MINIO_SECRET_KEY || 'minioadmin';
-const bucketName = process.env.MINIO_BUCKET || 'exam-proctoring';
+// Parse the internal endpoint URL (e.g. "http://minio:9000") to extract
+// the hostname and port for the MinIO client. Falls back to localhost:9000
+// if the URL is missing or unparseable.
+const internalEndpoint = process.env.MINIO_INTERNAL_ENDPOINT || 'http://localhost:9000';
+let endPoint = 'localhost';
+let port = 9000;
+let useSSL = false;
+
+try {
+  const url = new URL(internalEndpoint);
+  endPoint = url.hostname;
+  port = parseInt(url.port, 10) || (url.protocol === 'https:' ? 443 : 9000);
+  useSSL = url.protocol === 'https:';
+} catch {
+  console.warn('Failed to parse MINIO_INTERNAL_ENDPOINT, using defaults');
+}
+
+const accessKey = process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY || 'minioadmin';
+const secretKey = process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'minioadmin';
+const bucketName = process.env.MINIO_BUCKET_NAME || process.env.MINIO_BUCKET || 'exam-proctoring';
 
 export const minioClient = new Client({
   endPoint,

@@ -7,8 +7,9 @@
  * - Debounce logic (via useViolationAggregator)
  * - Tab-switch guard (via useVisibilityGuard)
  * - Strike counter & overlay state
+ * - Quiz question rendering and answer tracking
  *
- * Renders the video feed, detection canvas, and overlays.
+ * Renders the quiz questions on the left and a compact webcam feed on the right.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,12 +22,19 @@ import { usePresenceLossGuard } from '../hooks/usePresenceLossGuard';
 import { useMultiplePersonGuard } from '../hooks/useMultiplePersonGuard';
 import { WarningOverlay } from './WarningOverlay';
 import { TerminatedScreen } from './TerminatedScreen';
-import { reportIncident, submitAttempt } from '../../shared/api/attempt';
+import { reportIncident, submitAttempt, fetchQuizForStudent } from '../../shared/api/attempt';
+import type { StudentQuiz } from '../../shared/api/attempt';
+import type { Answer } from '../../shared/types/attempt';
 import { captureSnapshot } from '../lib/snapshot';
 
 type ExamStatus = 'loading' | 'active' | 'warning' | 'terminated' | 'submitted';
 
-export function ExamPage({ attemptId }: { attemptId: string }) {
+interface ExamPageProps {
+  attemptId: string;
+  resourceLinkId: string;
+}
+
+export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -37,9 +45,29 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
-  // Fake timer for demonstration purposes (60 minutes)
-  const [timeLeft, setTimeLeft] = useState(3600);
+  // Quiz state
+  const [quiz, setQuiz] = useState<StudentQuiz | null>(null);
+  const [quizError, setQuizError] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
+  // Timer — uses quiz.attemptDurationMinutes when available, else 60 minutes
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
+
+  // ── Fetch quiz questions ──────────────────────────────────────────
+  useEffect(() => {
+    fetchQuizForStudent(resourceLinkId)
+      .then(data => {
+        setQuiz(data);
+        const durationSec = (data.attemptDurationMinutes ?? 60) * 60;
+        setTimeLeft(durationSec);
+      })
+      .catch(err => {
+        console.error('Failed to load quiz:', err);
+        setQuizError('Failed to load quiz questions. Please refresh and try again.');
+      });
+  }, [resourceLinkId]);
 
   // ── Incident Reporting ────────────────────────────────────────────
   const report = useCallback(
@@ -188,20 +216,22 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
     };
   }, [setVideo]);
 
-  // ── Start detection once engine + camera are both ready ───────────
+  // ── Start detection once engine + camera + quiz are all ready ─────
   useEffect(() => {
-    if (workerReady && cameraReady && status === 'loading') {
+    if (workerReady && cameraReady && quiz && status === 'loading') {
       setStatus('active');
       startDetection();
     }
-  }, [workerReady, cameraReady, status, startDetection]);
+  }, [workerReady, cameraReady, quiz, status, startDetection]);
 
-  // ── Fake Timer ────────────────────────────────────────────────────
+  // ── Timer ─────────────────────────────────────────────────────────
   useEffect(() => {
     if (status !== 'active' && status !== 'warning') return;
+    if (timeLeft === null) return;
+
     const interval = setInterval(() => {
       setTimeLeft(prev => {
-        if (prev <= 1) {
+        if (prev === null || prev <= 1) {
           clearInterval(interval);
           setStatus('terminated');
           setTerminationReason('time_expired');
@@ -212,12 +242,24 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [status, report]);
+  }, [status, report, timeLeft !== null]);
+
+  // ── Answer selection ──────────────────────────────────────────────
+  const selectAnswer = (questionId: string, optionId: string) => {
+    setAnswers(prev => ({ ...prev, [questionId]: optionId }));
+  };
 
   // ── Submit Attempt ────────────────────────────────────────────────
   const handleSubmit = async () => {
+    if (!quiz) return;
+
+    const answerList: Answer[] = Object.entries(answers).map(([questionId, selectedOptionId]) => ({
+      questionId,
+      selectedOptionId,
+    }));
+
     try {
-      await submitAttempt(attemptId, []); // empty answers for demo
+      await submitAttempt(attemptId, answerList);
       setStatus('submitted');
     } catch (err) {
       console.error('Failed to submit attempt', err);
@@ -247,11 +289,25 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
     );
   }
 
+  if (quizError) {
+    return (
+      <Layout header={<div className="exam-header"><h1>Error</h1></div>}>
+        <div style={{ padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-danger)' }}>
+          <h2>{quizError}</h2>
+        </div>
+      </Layout>
+    );
+  }
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60).toString().padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
   };
+
+  const currentQuestion = quiz?.questions[currentQuestionIndex];
+  const totalQuestions = quiz?.questions.length ?? 0;
+  const answeredCount = Object.keys(answers).length;
 
   return (
     <Layout
@@ -259,16 +315,21 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
         status !== 'loading' ? (
           <div className="exam-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center' }}>
-              <h1 className="exam-header__title" style={{ fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-lg)', flex: '0 0 auto', marginRight: 'var(--space-2xl)' }}>Exam Session</h1>
+              <h1 className="exam-header__title" style={{ fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-lg)', flex: '0 0 auto', marginRight: 'var(--space-2xl)' }}>
+                {quiz?.title || 'Exam Session'}
+              </h1>
               <div style={{ minWidth: '400px' }}>
                 <StatusRail 
                   status={status === 'warning' ? 'warning' : 'active'}
-                  progress={(timeLeft / 3600) * 100}
-                  label={formatTime(timeLeft)}
+                  progress={timeLeft !== null ? (timeLeft / ((quiz?.attemptDurationMinutes ?? 60) * 60)) * 100 : 100}
+                  label={timeLeft !== null ? formatTime(timeLeft) : '--:--'}
                 />
               </div>
             </div>
-            <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+              <span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-sm)', color: 'var(--color-ink-muted)' }}>
+                {answeredCount}/{totalQuestions} answered
+              </span>
               <Button onClick={handleSubmit} variant="primary">Submit Exam</Button>
             </div>
           </div>
@@ -306,37 +367,117 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
         className="exam-page"
         style={status === 'loading' ? { visibility: 'hidden', position: 'absolute', width: 0, height: 0, overflow: 'hidden' } : undefined}
       >
-        <div className="exam-page__video-container">
-          <video
-            ref={videoRef}
-            className="exam-page__video"
-            playsInline
-            muted
-          />
-          <DetectionCanvas
-            detections={detections}
-            width={videoDimensions.width}
-            height={videoDimensions.height}
-          />
+        {/* ── Quiz Questions Panel ── */}
+        <div className="exam-page__quiz-panel">
+          {currentQuestion && (
+            <div className="exam-page__question-card">
+              {/* Question navigation */}
+              <div className="exam-page__question-nav">
+                <span className="exam-page__question-counter">
+                  Question {currentQuestionIndex + 1} of {totalQuestions}
+                </span>
+                <span className="exam-page__question-score">
+                  {currentQuestion.score} {currentQuestion.score === 1 ? 'point' : 'points'}
+                </span>
+              </div>
+
+              {/* Question text */}
+              <div className="exam-page__question-text">
+                {currentQuestion.text}
+              </div>
+
+              {/* Options */}
+              <div className="exam-page__options">
+                {currentQuestion.options.map((opt, i) => {
+                  const isSelected = answers[currentQuestion.id] === opt.id;
+                  const optionLetter = String.fromCharCode(65 + i); // A, B, C, D...
+                  return (
+                    <button
+                      key={opt.id}
+                      className={`exam-page__option ${isSelected ? 'exam-page__option--selected' : ''}`}
+                      onClick={() => selectAnswer(currentQuestion.id, opt.id)}
+                      type="button"
+                    >
+                      <span className="exam-page__option-letter">{optionLetter}</span>
+                      <span className="exam-page__option-text">{opt.text}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Prev / Next buttons */}
+              <div className="exam-page__question-controls">
+                <Button
+                  variant="ghost"
+                  disabled={currentQuestionIndex === 0}
+                  onClick={() => setCurrentQuestionIndex(i => i - 1)}
+                >
+                  ← Previous
+                </Button>
+                <Button
+                  variant="ghost"
+                  disabled={currentQuestionIndex >= totalQuestions - 1}
+                  onClick={() => setCurrentQuestionIndex(i => i + 1)}
+                >
+                  Next →
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Question palette / jump */}
+          <div className="exam-page__question-palette">
+            {quiz?.questions.map((q, i) => {
+              const isAnswered = !!answers[q.id];
+              const isCurrent = i === currentQuestionIndex;
+              return (
+                <button
+                  key={q.id}
+                  type="button"
+                  className={`exam-page__palette-btn ${isCurrent ? 'exam-page__palette-btn--current' : ''} ${isAnswered ? 'exam-page__palette-btn--answered' : ''}`}
+                  onClick={() => setCurrentQuestionIndex(i)}
+                >
+                  {i + 1}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="exam-page__info">
-          <div className="exam-page__strikes">
-            <span>Strikes:</span>
-            <span className={`exam-page__strike-count ${strikes > 0 ? 'exam-page__strike-count--danger' : ''}`}>
-              {strikes} / 2
-            </span>
+        {/* ── Webcam & Detection Sidebar ── */}
+        <div className="exam-page__sidebar">
+          <div className="exam-page__video-container">
+            <video
+              ref={videoRef}
+              className="exam-page__video"
+              playsInline
+              muted
+            />
+            <DetectionCanvas
+              detections={detections}
+              width={videoDimensions.width}
+              height={videoDimensions.height}
+            />
           </div>
-          <div className="exam-page__active-flags">
-            {detections.length > 0 ? (
-              detections.map((d, i) => (
-                <span key={`${d.label}-${i}`} className="exam-page__flag-badge">
-                  {d.label.replace('_', ' ')}
-                </span>
-              ))
-            ) : (
-              <span className="exam-page__no-flags">No issues detected</span>
-            )}
+
+          <div className="exam-page__info">
+            <div className="exam-page__strikes">
+              <span>Strikes:</span>
+              <span className={`exam-page__strike-count ${strikes > 0 ? 'exam-page__strike-count--danger' : ''}`}>
+                {strikes} / 2
+              </span>
+            </div>
+            <div className="exam-page__active-flags">
+              {detections.length > 0 ? (
+                detections.map((d, i) => (
+                  <span key={`${d.label}-${i}`} className="exam-page__flag-badge">
+                    {d.label.replace('_', ' ')}
+                  </span>
+                ))
+              ) : (
+                <span className="exam-page__no-flags">No issues detected</span>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -351,4 +492,3 @@ export function ExamPage({ attemptId }: { attemptId: string }) {
     </Layout>
   );
 }
-
