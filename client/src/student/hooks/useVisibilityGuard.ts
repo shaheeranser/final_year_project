@@ -50,32 +50,45 @@ export function useVisibilityGuard({
       armed = true;
     }, graceMs);
 
-    const handler = () => {
+    const handleHide = () => {
       if (!armed) return;
+      if (debounceTimer) return; // already waiting
 
-      if (document.hidden) {
-        // Tab went hidden — start the debounce countdown
-        debounceTimer = setTimeout(() => {
-          // Still hidden after the debounce window? Fire.
-          if (document.hidden) {
-            onHiddenRef.current();
-          }
-        }, debounceMs);
-      } else {
-        // Tab came back before the debounce expired — cancel
-        if (debounceTimer) {
-          clearTimeout(debounceTimer);
-          debounceTimer = null;
+      // Start the countdown
+      debounceTimer = setTimeout(() => {
+        // Still hidden or lost focus? Fire.
+        if (document.hidden || !document.hasFocus()) {
+          onHiddenRef.current();
         }
+      }, debounceMs);
+    };
+
+    const handleShow = () => {
+      // Came back before the debounce expired — cancel
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+        debounceTimer = null;
       }
     };
 
-    document.addEventListener('visibilitychange', handler);
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        handleHide();
+      } else {
+        handleShow();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleHide);
+    window.addEventListener('focus', handleShow);
 
     return () => {
       clearTimeout(graceTimer);
       if (debounceTimer) clearTimeout(debounceTimer);
-      document.removeEventListener('visibilitychange', handler);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleHide);
+      window.removeEventListener('focus', handleShow);
     };
   }, [enabled, graceMs, debounceMs]);
 }

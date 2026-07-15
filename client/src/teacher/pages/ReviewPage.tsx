@@ -99,7 +99,7 @@ export function ReviewPage() {
             </div>
             {attempt.identitySnapshotUrl ? (
               <div style={{ marginTop: 'var(--space-lg)' }}>
-                <img src={attempt.identitySnapshotUrl} alt="Student Identity" style={{ maxWidth: '100%', borderRadius: '4px' }} />
+                <img src={attempt.identitySnapshotUrl} alt="Student Identity" crossOrigin="anonymous" style={{ maxWidth: '100%', borderRadius: '4px' }} />
               </div>
             ) : (
               <div style={{ marginTop: 'var(--space-lg)', padding: 'var(--space-xl)', background: 'var(--color-bg)', textAlign: 'center', color: 'var(--color-ink-muted)' }}>
@@ -170,7 +170,7 @@ export function ReviewPage() {
                   </div>
                   {incident.snapshotUrl && (
                     <div style={{ marginTop: 'var(--space-md)' }}>
-                      <img src={incident.snapshotUrl} alt="Incident Snapshot" style={{ maxWidth: '100%', borderRadius: '4px' }} />
+                      <img src={incident.snapshotUrl} alt="Incident Snapshot" crossOrigin="anonymous" style={{ maxWidth: '100%', borderRadius: '4px' }} />
                     </div>
                   )}
                 </div>

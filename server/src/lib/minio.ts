@@ -29,24 +29,29 @@ const accessKey = process.env.MINIO_ROOT_USER || process.env.MINIO_ACCESS_KEY ||
 const secretKey = process.env.MINIO_ROOT_PASSWORD || process.env.MINIO_SECRET_KEY || 'minioadmin';
 const bucketName = process.env.MINIO_BUCKET_NAME || process.env.MINIO_BUCKET || 'exam-proctoring';
 
+const region = process.env.MINIO_REGION || 'us-east-1';
+
 export const minioClient = new Client({
   endPoint: intEndPoint,
   port: intPort,
   useSSL: intUseSSL,
   accessKey,
-  secretKey
+  secretKey,
+  region
 });
 
 // A separate client configured with the external endpoint.
 // AWS Signature V4 includes the Host header. If we generate the signature using the internal
 // minio:9000 endpoint, the signature will be invalid when the browser accesses it via localhost:9000.
-// Generating presigned URLs is a purely local crypto operation, so this client doesn't need network access.
+// Generating presigned URLs is a purely local crypto operation, so this client doesn't need network access,
+// provided we explicitly pass the region to prevent it from querying the bucket location.
 export const minioExternalClient = new Client({
   endPoint: extEndPoint,
   port: extPort,
   useSSL: extUseSSL,
   accessKey,
-  secretKey
+  secretKey,
+  region
 });
 
 export const getPresignedUrl = async (key: string, expirySeconds?: number): Promise<string | null> => {

@@ -131,6 +131,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   // Tab-switch guard (Hard)
   useVisibilityGuard({
     enabled: status === 'active' || status === 'warning',
+    debounceMs: 0,
     onHidden: useCallback(() => {
       setTerminationReason('tab_switch');
       setStatus('terminated');
@@ -159,7 +160,6 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       report('multiple_people', 'hard');
     }, [report])
   });
-
 
   // ── Stop detection on termination or submission ────────────────────
   useEffect(() => {
@@ -366,7 +366,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
       <div
         className="exam-page"
-        style={status === 'loading' ? { visibility: 'hidden', position: 'absolute', width: 0, height: 0, overflow: 'hidden' } : undefined}
+        style={status === 'loading' ? { opacity: 0, position: 'absolute', zIndex: -1 } : undefined}
       >
         {/* ── Quiz Questions Panel ── */}
         <div className="exam-page__quiz-panel">
@@ -448,7 +448,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
         {/* ── Webcam & Detection Sidebar ── */}
         <div className="exam-page__sidebar">
           {/* Hide the video container from the student while preserving functionality */}
-          <div className="exam-page__video-container" style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
+          <div className="exam-page__video-container" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none', zIndex: -1 }}>
             <video
               ref={videoRef}
               className="exam-page__video"
