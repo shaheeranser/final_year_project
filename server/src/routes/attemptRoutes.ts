@@ -9,7 +9,8 @@ import {
 import {
   listAttempts,
   getAttemptDetail,
-  reviewAttempt
+  reviewAttempt,
+  liveUpdates
 } from '../controllers/reviewController.js';
 import { getQuizForStudent } from '../controllers/quizController.js';
 import { requireTeacher } from '../middleware/auth.js';
@@ -26,6 +27,7 @@ router.post('/attempts/:attemptId/submit', submitAttempt);
 
 // Teacher-facing routes
 router.get('/quizzes/:resourceLinkId/attempts', requireTeacher, listAttempts);
+router.get('/quizzes/:resourceLinkId/live-updates', requireTeacher, liveUpdates);
 router.get('/attempts/:attemptId', requireTeacher, getAttemptDetail);
 router.post('/attempts/:attemptId/review', requireTeacher, reviewAttempt);
 

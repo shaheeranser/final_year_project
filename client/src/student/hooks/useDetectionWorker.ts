@@ -27,6 +27,8 @@ export interface DetectionWorkerState {
   loadingProgress: number;
   /** Latest detections */
   detections: Detection[];
+  /** Is a face currently detected */
+  hasFace: boolean;
   /** Last error, if any */
   error: string | null;
 }
@@ -53,6 +55,7 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
     loadingStage: 'Initializing…',
     loadingProgress: 0,
     detections: [],
+    hasFace: false,
     error: null,
   });
 
@@ -97,8 +100,8 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
 
     detectingRef.current = true;
     try {
-      const detections = await engine.detect(video);
-      setState((s) => ({ ...s, detections }));
+      const { detections, hasFace } = await engine.detect(video);
+      setState((s) => ({ ...s, detections, hasFace }));
       onDetectionsRef.current?.(detections);
     } catch {
       // transient frame errors are silently ignored

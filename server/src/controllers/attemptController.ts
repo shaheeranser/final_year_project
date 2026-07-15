@@ -4,6 +4,7 @@ import { Attempt } from '../models/Attempt.js';
 import { Incident } from '../models/Incident.js';
 import { uploadSnapshot } from '../lib/minio.js';
 import { SOFT_VIOLATION_STRIKE_LIMIT } from '../lib/proctoring.js';
+import { broadcastToQuiz } from '../lib/sse.js';
 
 // 3.1 Implement getEligibility
 export const getEligibility = async (req: Request, res: Response): Promise<void> => {
@@ -122,6 +123,8 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
       await quiz.save();
     }
 
+    broadcastToQuiz(quizId, 'attempt_created', newAttempt);
+
     res.status(201).json(newAttempt);
 
   } catch (error) {
@@ -164,6 +167,8 @@ export const startAttempt = async (req: Request, res: Response): Promise<void> =
     attempt.startedAt = new Date();
     attempt.identitySnapshotKey = identitySnapshotKey;
     await attempt.save();
+
+    broadcastToQuiz(attempt.quizId, 'attempt_updated', attempt);
 
     res.status(200).json(attempt);
 
@@ -223,6 +228,8 @@ export const reportIncident = async (req: Request, res: Response): Promise<void>
 
     await attempt.save();
 
+    broadcastToQuiz(attempt.quizId, 'incident_reported', { attempt, incident });
+
     res.status(200).json(attempt);
   } catch (error) {
     console.error('reportIncident error:', error);
@@ -267,6 +274,9 @@ export const submitAttempt = async (req: Request, res: Response): Promise<void> 
     }
 
     await attempt.save();
+    
+    broadcastToQuiz(attempt.quizId, 'attempt_updated', attempt);
+    
     res.status(200).json(attempt);
   } catch (error) {
     console.error('submitAttempt error:', error);

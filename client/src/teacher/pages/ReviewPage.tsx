@@ -29,6 +29,36 @@ export function ReviewPage() {
     load();
   }, [attemptId]);
 
+  // Listen to SSE feed for real-time updates for this attempt
+  useEffect(() => {
+    if (!attempt?.quizId) return;
+
+    const ltik = sessionStorage.getItem('ltik');
+    const es = new EventSource(`/api/quizzes/${attempt.quizId}/live-updates?ltik=${ltik}`, { withCredentials: true });
+
+    const refreshData = async (e: MessageEvent) => {
+      try {
+        if (!attemptId) return;
+        const payload = JSON.parse(e.data);
+        // Only refresh if the event is for this attempt
+        const updatedAttemptId = payload.attempt ? payload.attempt._id : payload._id;
+        if (updatedAttemptId === attemptId) {
+          const data = await getAttemptDetail(attemptId);
+          setAttempt(data);
+        }
+      } catch (err) {
+        console.error('Failed to refresh attempt data', err);
+      }
+    };
+
+    es.addEventListener('attempt_updated', refreshData);
+    es.addEventListener('incident_reported', refreshData);
+
+    return () => {
+      es.close();
+    };
+  }, [attempt?.quizId, attemptId]);
+
   if (loading) return <Spinner label="Loading Attempt Details..." />;
   if (error || !attempt) return <div style={{ padding: 'var(--space-2xl)', color: 'var(--color-danger)' }}>{error || 'Not found'}</div>;
 

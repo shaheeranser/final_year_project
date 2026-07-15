@@ -84,13 +84,46 @@ export function computeIrisDeviation(
   return (left + right) / 2;
 }
 
+/**
+ * Analyze overall luminance of the video frame using a small canvas.
+ * Returns a flag if the lighting is too dark or too bright.
+ */
+export function analyzeLighting(
+  video: HTMLVideoElement, 
+  canvas: HTMLCanvasElement | OffscreenCanvas, 
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
+): 'too_dark' | 'too_bright' | 'ok' {
+  // Draw scaled down version to improve performance
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  let totalLuminance = 0;
+  
+  // Fast perceived luminance: sample every pixel in the tiny canvas
+  const pixelCount = canvas.width * canvas.height;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    // Approximation of luminance: (2*R + 5*G + 1*B) / 8
+    const luminance = (r * 2 + g * 5 + b) / 8;
+    totalLuminance += luminance;
+  }
+  
+  const avgLuminance = totalLuminance / pixelCount;
+  
+  if (avgLuminance < 15) return 'too_dark';
+  if (avgLuminance > 240) return 'too_bright';
+  return 'ok';
+}
+
 // ── Detection Engine ─────────────────────────────────────────────────
 
 export interface DetectionEngine {
   /** Load all ML models. Calls onProgress during loading. */
   init(onProgress: (stage: string, progress: number) => void): Promise<void>;
   /** Run all detection models on a single video frame. */
-  detect(video: HTMLVideoElement): Promise<Detection[]>;
+  detect(video: HTMLVideoElement): Promise<{ detections: Detection[]; hasFace: boolean }>;
   /** Tear down models and release resources. */
   stop(): void;
 }
@@ -99,10 +132,24 @@ export function createDetectionEngine(): DetectionEngine {
   let cocoModel: import('@tensorflow-models/coco-ssd').ObjectDetection | null = null;
   let faceLandmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
   let stopped = false;
+  
+  let lightingCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+  let lightingCtx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null;
 
   return {
     async init(onProgress) {
       try {
+        // Initialize lighting canvas (64x64 is enough for average luminance)
+        if (typeof OffscreenCanvas !== 'undefined') {
+          lightingCanvas = new OffscreenCanvas(64, 64);
+          lightingCtx = lightingCanvas.getContext('2d', { willReadFrequently: true }) as OffscreenCanvasRenderingContext2D;
+        } else {
+          lightingCanvas = document.createElement('canvas');
+          lightingCanvas.width = 64;
+          lightingCanvas.height = 64;
+          lightingCtx = lightingCanvas.getContext('2d', { willReadFrequently: true }) as CanvasRenderingContext2D;
+        }
+
         // 1. TensorFlow.js + coco-ssd
         onProgress('Loading TensorFlow.js…', 0.1);
         const tf = await import('@tensorflow/tfjs');
@@ -141,9 +188,24 @@ export function createDetectionEngine(): DetectionEngine {
       }
     },
 
-    async detect(video: HTMLVideoElement): Promise<Detection[]> {
-      if (stopped) return [];
+    async detect(video: HTMLVideoElement): Promise<{ detections: Detection[]; hasFace: boolean }> {
+      if (stopped) return { detections: [], hasFace: false };
       const detections: Detection[] = [];
+      let hasFace = false;
+
+      // ── Lighting / Camera Blocked Check ────────────────────────
+      if (lightingCanvas && lightingCtx) {
+        try {
+          const lightingStatus = analyzeLighting(video, lightingCanvas, lightingCtx);
+          if (lightingStatus === 'too_dark') {
+            detections.push({ label: 'camera_blocked_or_dark', confidence: 1.0 });
+          } else if (lightingStatus === 'too_bright') {
+            detections.push({ label: 'extreme_glare', confidence: 1.0 });
+          }
+        } catch {
+          // Ignore canvas read errors
+        }
+      }
 
       // ── coco-ssd (object detection) ────────────────────────────
       if (cocoModel) {
@@ -174,6 +236,7 @@ export function createDetectionEngine(): DetectionEngine {
           const result = faceLandmarker.detectForVideo(video, performance.now());
 
           if (result.faceLandmarks && result.faceLandmarks.length > 0) {
+            hasFace = true;
             const landmarks = result.faceLandmarks[0];
 
             // Head pose from transformation matrix
@@ -203,7 +266,7 @@ export function createDetectionEngine(): DetectionEngine {
         }
       }
 
-      return detections;
+      return { detections, hasFace };
     },
 
     stop() {

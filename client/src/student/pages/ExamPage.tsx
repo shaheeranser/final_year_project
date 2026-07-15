@@ -119,6 +119,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     loadingStage,
     loadingProgress,
     detections,
+    hasFace,
     error: workerError,
     setVideo,
     start: startDetection,
@@ -139,7 +140,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
   // Presence loss guard (Hard)
   usePresenceLossGuard({
-    detections,
+    hasFace,
     enabled: status === 'active',
     onCameraLost: useCallback(() => {
       setTerminationReason('camera_lost');
@@ -446,7 +447,8 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
         {/* ── Webcam & Detection Sidebar ── */}
         <div className="exam-page__sidebar">
-          <div className="exam-page__video-container">
+          {/* Hide the video container from the student while preserving functionality */}
+          <div className="exam-page__video-container" style={{ visibility: 'hidden', position: 'absolute', width: 0, height: 0, overflow: 'hidden' }}>
             <video
               ref={videoRef}
               className="exam-page__video"

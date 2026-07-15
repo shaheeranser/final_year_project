@@ -108,3 +108,24 @@ export const reviewAttempt = async (req: Request, res: Response): Promise<void> 
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+// 4.4 SSE feed for live updates
+import { addClient, removeClient } from '../lib/sse.js';
+
+export const liveUpdates = (req: Request, res: Response): void => {
+  const resourceLinkId = req.params.resourceLinkId as string;
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const clientId = addClient(resourceLinkId, res);
+
+  // Send an initial heartbeat
+  res.write(`event: connected\ndata: ${JSON.stringify({ clientId })}\n\n`);
+
+  req.on('close', () => {
+    removeClient(resourceLinkId, clientId);
+  });
+};

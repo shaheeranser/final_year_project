@@ -30,6 +30,31 @@ export function Dashboard() {
     loadData();
   }, []);
 
+  // Listen to SSE feed for real-time updates
+  useEffect(() => {
+    if (!quiz?.resourceLinkId) return;
+
+    const ltik = sessionStorage.getItem('ltik');
+    const es = new EventSource(`/api/quizzes/${quiz.resourceLinkId}/live-updates?ltik=${ltik}`, { withCredentials: true });
+
+    const refreshAttempts = async () => {
+      try {
+        const att = await listAttempts(quiz.resourceLinkId);
+        setAttempts(att);
+      } catch (err) {
+        console.error('Failed to refresh attempts', err);
+      }
+    };
+
+    es.addEventListener('attempt_created', refreshAttempts);
+    es.addEventListener('attempt_updated', refreshAttempts);
+    es.addEventListener('incident_reported', refreshAttempts);
+
+    return () => {
+      es.close();
+    };
+  }, [quiz?.resourceLinkId]);
+
   if (loading) return <Spinner label="Loading Dashboard..." />;
   if (error) return <div className="dashboard-content"><p style={{color: 'var(--color-danger)'}}>{error}</p></div>;
 
