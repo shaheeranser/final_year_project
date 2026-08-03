@@ -1,5 +1,13 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+export interface ILtiContext {
+  platformUrl: string | null;
+  clientId: string | null;
+  deploymentId: string | null;
+  lineItemUrl: string | null;
+  ltiUserId: string | null;
+}
+
 export interface IAttempt extends Document {
   quizId: string;
   studentUserId: string;
@@ -17,6 +25,7 @@ export interface IAttempt extends Document {
   reviewNotes: string | null;
   finalScore: number | null;
   gradePassedBack: boolean;
+  ltiContext: ILtiContext | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -24,6 +33,14 @@ export interface IAttempt extends Document {
 const AnswerSchema = new Schema({
   questionId: { type: String, required: true },
   selectedOptionId: { type: String, required: true },
+}, { _id: false });
+
+const LtiContextSchema = new Schema({
+  platformUrl: { type: String, default: null },
+  clientId: { type: String, default: null },
+  deploymentId: { type: String, default: null },
+  lineItemUrl: { type: String, default: null },
+  ltiUserId: { type: String, default: null },
 }, { _id: false });
 
 const AttemptSchema = new Schema<IAttempt>({
@@ -43,6 +60,7 @@ const AttemptSchema = new Schema<IAttempt>({
   reviewNotes: { type: String, default: null },
   finalScore: { type: Number, default: null },
   gradePassedBack: { type: Boolean, default: false },
+  ltiContext: { type: LtiContextSchema, default: null },
 }, { timestamps: true });
 
 AttemptSchema.index({ quizId: 1, studentUserId: 1 });

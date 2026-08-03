@@ -25,8 +25,17 @@ declare module "ltijs" {
   export interface IdToken {
     iss: string;
     user: string;
+    deploymentId?: string;
     userInfo: IdTokenUserInfo;
     platformContext: IdTokenPlatformContext;
+  }
+
+  export interface GradeObject {
+    userId: string;
+    scoreGiven: number;
+    scoreMaximum: number;
+    activityProgress: string;
+    gradingProgress: string;
   }
 
   export interface PlatformConfig {
@@ -113,6 +122,14 @@ declare module "ltijs" {
     static onUnregisteredPlatform(callback: ErrorHookCallback): void;
 
     static app: Express;
+
+    static Grade: {
+      submitScore(
+        idtoken: Partial<IdToken>,
+        lineItemId: string,
+        grade: GradeObject
+      ): Promise<unknown>;
+    };
   }
 
   const lti: { Provider: typeof Provider };

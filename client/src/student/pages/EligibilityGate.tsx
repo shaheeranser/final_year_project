@@ -129,7 +129,9 @@ export function EligibilityGate({ resourceLinkId, onAttemptReady }: Props) {
       const attempt = await createAttempt(resourceLinkId);
       await startAttempt(attempt._id, snapshot);
 
-      streamRef.current?.getTracks().forEach(t => t.stop());
+      // Do NOT stop the stream here — the component's useEffect cleanup (return () => ...)
+      // will stop it when EligibilityGate unmounts. Stopping it here creates a gap where
+      // ExamPage mounts but has no stream, causing a spurious camera_lost violation.
       onAttemptReady(attempt._id);
     } catch (err: any) {
       setPreCheckError('Failed to start attempt. Please try again.');

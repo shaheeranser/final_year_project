@@ -12,6 +12,7 @@ import {
   reviewAttempt,
   liveUpdates
 } from '../controllers/reviewController.js';
+import { retryPassback } from '../controllers/retryPassbackController.js';
 import { getQuizForStudent } from '../controllers/quizController.js';
 import { requireTeacher } from '../middleware/auth.js';
 
@@ -30,5 +31,6 @@ router.get('/quizzes/:resourceLinkId/attempts', requireTeacher, listAttempts);
 router.get('/quizzes/:resourceLinkId/live-updates', requireTeacher, liveUpdates);
 router.get('/attempts/:attemptId', requireTeacher, getAttemptDetail);
 router.post('/attempts/:attemptId/review', requireTeacher, reviewAttempt);
+router.post('/attempts/:attemptId/retry-passback', requireTeacher, retryPassback);
 
 export default router;

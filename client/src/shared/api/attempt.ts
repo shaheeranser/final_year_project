@@ -96,14 +96,22 @@ export const getAttemptDetail = async (attemptId: string): Promise<Attempt & { i
 export const reviewAttempt = async (
   attemptId: string, 
   outcome: ReviewOutcome, 
-  finalScore?: number, 
   reviewNotes?: string
 ): Promise<Attempt> => {
   const res = await fetch(`/api/attempts/${attemptId}/review`, {
     method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ outcome, finalScore, reviewNotes })
+    body: JSON.stringify({ outcome, reviewNotes })
   });
   if (!res.ok) throw new Error(`Review attempt failed: ${res.statusText}`);
+  return res.json();
+};
+
+export const retryPassback = async (attemptId: string): Promise<Attempt> => {
+  const res = await fetch(`/api/attempts/${attemptId}/retry-passback`, {
+    method: 'POST',
+    headers: getHeaders()
+  });
+  if (!res.ok) throw new Error(`Retry passback failed: ${res.statusText}`);
   return res.json();
 };

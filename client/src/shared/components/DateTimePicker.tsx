@@ -9,9 +9,27 @@ interface DateTimePickerProps {
 }
 
 export function DateTimePicker({ label, value, onChange, disabled }: DateTimePickerProps) {
-  // Parse initial values
-  const initialDate = value ? value.split('T')[0] : '';
-  const initialTime = value ? value.split('T')[1].substring(0, 5) : '';
+  const toUtcIso = (date: string, h: string, m: string): string => {
+    // Construct a Date from the local date + time the teacher entered,
+    // then convert to UTC ISO — avoids the 'Z' trap that treats local
+    // times as UTC.
+    const local = new Date(`${date}T${h}:${m}:00`);
+    return local.toISOString();
+  };
+
+  // Derive initial display values from the stored UTC ISO string
+  const getLocalParts = (iso: string) => {
+    const d = new Date(iso);
+    return {
+      date: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`,
+      hours: String(d.getHours()).padStart(2, '0'),
+      minutes: String(d.getMinutes()).padStart(2, '0'),
+    };
+  };
+
+  const initialParts = value ? getLocalParts(value) : null;
+  const initialDate = initialParts?.date ?? '';
+  const initialTime = initialParts ? `${initialParts.hours}:${initialParts.minutes}` : '';
 
   const [dateStr, setDateStr] = useState(initialDate);
   const [hours, setHours] = useState(initialTime ? initialTime.split(':')[0] : '12');
@@ -19,12 +37,16 @@ export function DateTimePicker({ label, value, onChange, disabled }: DateTimePic
 
   useEffect(() => {
     if (value) {
-      setDateStr(value.split('T')[0]);
-      const timePart = value.split('T')[1];
-      if (timePart) {
-        setHours(timePart.substring(0, 2));
-        setMinutes(timePart.substring(3, 5));
-      }
+      // value is a UTC ISO string — convert to local time for display
+      const d = new Date(value);
+      const localYear = d.getFullYear();
+      const localMonth = String(d.getMonth() + 1).padStart(2, '0');
+      const localDay = String(d.getDate()).padStart(2, '0');
+      const localHours = String(d.getHours()).padStart(2, '0');
+      const localMinutes = String(d.getMinutes()).padStart(2, '0');
+      setDateStr(`${localYear}-${localMonth}-${localDay}`);
+      setHours(localHours);
+      setMinutes(localMinutes);
     } else {
       setDateStr('');
     }
@@ -36,8 +58,8 @@ export function DateTimePicker({ label, value, onChange, disabled }: DateTimePic
     if (!newDate) {
       onChange(undefined);
     } else {
-      // Default time to 12:00 if not set when date is first picked
-      onChange(`${newDate}T${hours}:${minutes}:00.000Z`);
+      // Convert local date+time to UTC ISO string
+      onChange(toUtcIso(newDate, hours, minutes));
     }
   };
 
@@ -45,7 +67,7 @@ export function DateTimePicker({ label, value, onChange, disabled }: DateTimePic
     setHours(newHours);
     setMinutes(newMinutes);
     if (dateStr) {
-      onChange(`${dateStr}T${newHours}:${newMinutes}:00.000Z`);
+      onChange(toUtcIso(dateStr, newHours, newMinutes));
     }
   };
 

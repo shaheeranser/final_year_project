@@ -76,6 +76,12 @@ export function Dashboard() {
     return { s: 'pending', p: 0, l: att.status };
   };
 
+  /** True when the attempt is finalized but not yet needs-review (de-emphasized row) */
+  const isDeEmphasized = (att: Attempt) => !att.needsReview && att.finalScore !== null;
+
+  /** True when passback failed and needs attention */
+  const hasPassbackFailure = (att: Attempt) => att.finalScore !== null && att.gradePassedBack === false;
+
   return (
     <Layout
       header={
@@ -99,8 +105,14 @@ export function Dashboard() {
             <div style={{ flex: 1, paddingLeft: 'var(--space-md)' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Status Track</h2>
             </div>
-            <div style={{ flex: '0 0 100px', textAlign: 'center' }}>
+            <div style={{ flex: '0 0 80px', textAlign: 'center' }}>
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Strikes</h2>
+            </div>
+            <div style={{ flex: '0 0 80px', textAlign: 'center' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Incidents</h2>
+            </div>
+            <div style={{ flex: '0 0 80px', textAlign: 'center' }}>
+              <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Score</h2>
             </div>
             <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Actions</h2>
@@ -114,19 +126,48 @@ export function Dashboard() {
           ) : (
             attempts.map((att, i) => {
               const cfg = getStatusConfig(att) as any;
+              const deEmphasized = isDeEmphasized(att);
+              const passbackFailed = hasPassbackFailure(att);
               return (
                 <div 
                   key={att._id} 
+                  data-urgency-tier={deEmphasized ? 'finalized' : 'active'}
                   style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
                     padding: 'var(--space-md) var(--space-lg)', 
-                    borderBottom: i < attempts.length - 1 ? '1px solid var(--color-border)' : 'none'
+                    borderBottom: i < attempts.length - 1 ? '1px solid var(--color-border)' : 'none',
+                    opacity: deEmphasized ? 0.55 : 1,
+                    transition: 'opacity var(--transition-base)',
                   }}
                 >
                   <div style={{ flex: '0 0 200px', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
                     <div style={{ fontSize: '10px', color: 'var(--color-ink-muted)', marginBottom: '4px' }}>{att.studentUserId}</div>
-                    {att._id}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      {att._id}
+                      {passbackFailed && (
+                        <span
+                          data-testid="passback-failure-indicator"
+                          title="Grade passback failed — retry from review page"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: '18px',
+                            height: '18px',
+                            borderRadius: 'var(--radius-full)',
+                            background: 'var(--color-alert)',
+                            color: '#fff',
+                            fontSize: '11px',
+                            fontWeight: 700,
+                            flexShrink: 0,
+                            cursor: 'help',
+                          }}
+                        >
+                          !
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div style={{ flex: 1, paddingLeft: 'var(--space-md)', paddingRight: 'var(--space-xl)' }}>
                     <StatusRail 
@@ -135,8 +176,14 @@ export function Dashboard() {
                       label={cfg.l} 
                     />
                   </div>
-                  <div style={{ flex: '0 0 100px', textAlign: 'center', fontWeight: 'bold', color: att.incidentCount ? 'var(--color-danger)' : 'inherit' }}>
+                  <div style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 'bold', color: att.strikeCount ? 'var(--color-alert)' : 'inherit' }}>
+                    {att.strikeCount || 0}
+                  </div>
+                  <div style={{ flex: '0 0 80px', textAlign: 'center', fontWeight: 'bold', color: att.incidentCount ? 'var(--color-alert)' : 'inherit' }}>
                     {att.incidentCount || 0}
+                  </div>
+                  <div style={{ flex: '0 0 80px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                    {att.finalScore !== null ? att.finalScore : '—'}
                   </div>
                   <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
                     <Button 

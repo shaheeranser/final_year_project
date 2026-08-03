@@ -1,7 +1,9 @@
 import type { Request, Response } from 'express';
 import { Attempt } from '../models/Attempt.js';
+import { Quiz } from '../models/Quiz.js';
 import { Incident } from '../models/Incident.js';
 import { getPresignedUrl } from '../lib/minio.js';
+import { finalizeAttemptScore } from '../lib/gradePassback.js';
 
 // 4.1 Implement listAttempts
 export const listAttempts = async (req: Request, res: Response): Promise<void> => {
@@ -23,6 +25,7 @@ export const listAttempts = async (req: Request, res: Response): Promise<void> =
         needsReview: attempt.needsReview,
         reviewOutcome: attempt.reviewOutcome,
         finalScore: attempt.finalScore,
+        gradePassedBack: attempt.gradePassedBack,
         createdAt: attempt.createdAt,
         incidentCount
       };
@@ -77,7 +80,7 @@ export const getAttemptDetail = async (req: Request, res: Response): Promise<voi
 export const reviewAttempt = async (req: Request, res: Response): Promise<void> => {
   try {
     const { attemptId } = req.params;
-    const { outcome, finalScore, reviewNotes } = req.body;
+    const { outcome, reviewNotes } = req.body;
     const reviewedByUserId = res.locals.token?.user;
 
     const attempt = await Attempt.findById(attemptId);
@@ -93,15 +96,33 @@ export const reviewAttempt = async (req: Request, res: Response): Promise<void> 
     attempt.needsReview = false;
 
     if (outcome === 'dismissed') {
-      attempt.finalScore = finalScore !== undefined ? finalScore : 0;
+      // Compute score server-side by matching answers against quiz
+      const quiz = await Quiz.findOne({ resourceLinkId: attempt.quizId });
+      if (!quiz) {
+        console.error(`[reviewAttempt] Quiz not found for attempt ${attemptId} (quizId: ${attempt.quizId})`);
+        res.status(500).json({ error: 'Quiz not found — data inconsistency' });
+        return;
+      }
+      let score = 0;
+      for (const answer of attempt.answers) {
+        const question = quiz.questions.find((q: any) => q.id === answer.questionId);
+        if (question && question.correctOptionId === answer.selectedOptionId) {
+          score += question.score;
+        }
+      }
+      await attempt.save();
+      await finalizeAttemptScore(attempt._id.toString(), score);
     } else if (outcome === 'upheld') {
-      attempt.finalScore = finalScore !== undefined ? finalScore : 0;
+      await attempt.save();
+      await finalizeAttemptScore(attempt._id.toString(), 0);
     } else if (outcome === 'retest_granted') {
       attempt.finalScore = null;
+      await attempt.save();
     }
 
-    await attempt.save();
-    res.status(200).json(attempt);
+    // Re-fetch to include any changes from finalizeAttemptScore
+    const updatedAttempt = await Attempt.findById(attemptId) || attempt;
+    res.status(200).json(updatedAttempt);
 
   } catch (error) {
     console.error('reviewAttempt error:', error);

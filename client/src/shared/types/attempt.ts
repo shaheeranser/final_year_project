@@ -8,6 +8,14 @@ export interface Answer {
   selectedOptionId: string;
 }
 
+export interface ILtiContext {
+  platformUrl: string | null;
+  clientId: string | null;
+  deploymentId: string | null;
+  lineItemUrl: string | null;
+  ltiUserId: string | null;
+}
+
 export interface Attempt {
   _id: string;
   quizId: string;
@@ -26,6 +34,7 @@ export interface Attempt {
   reviewNotes: string | null;
   finalScore: number | null;
   gradePassedBack: boolean;
+  ltiContext?: ILtiContext | null;
   createdAt: string;
   updatedAt: string;
   incidentCount?: number; // Added by review summary API

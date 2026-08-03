@@ -5,6 +5,7 @@ import { Incident } from '../models/Incident.js';
 import { uploadSnapshot } from '../lib/minio.js';
 import { SOFT_VIOLATION_STRIKE_LIMIT } from '../lib/proctoring.js';
 import { broadcastToQuiz } from '../lib/sse.js';
+import { finalizeAttemptScore } from '../lib/gradePassback.js';
 
 // 3.1 Implement getEligibility
 export const getEligibility = async (req: Request, res: Response): Promise<void> => {
@@ -111,9 +112,23 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
        }
     }
 
+    // Extract ltiContext from the LTI IdToken if present
+    const token = res.locals.token as any;
+    let ltiContext = null;
+    if (token) {
+      ltiContext = {
+        platformUrl: token.iss ?? null,
+        clientId: token.clientId ?? null,          // set by ltijs after platform lookup
+        deploymentId: token.deploymentId ?? null,
+        lineItemUrl: token.platformContext?.endpoint?.lineitem ?? null,
+        ltiUserId: token.user ?? null,
+      };
+    }
+
     const newAttempt = new Attempt({
       quizId,
-      studentUserId
+      studentUserId,
+      ltiContext,
     });
     await newAttempt.save();
 
@@ -255,7 +270,10 @@ export const submitAttempt = async (req: Request, res: Response): Promise<void> 
     attempt.endedAt = new Date();
     attempt.answers = answers || [];
 
+    await attempt.save();
+
     if (!attempt.needsReview) {
+      // Compute score and attempt AGS passback via the shared finalize function
       try {
         const quiz = await Quiz.findOne({ resourceLinkId: attempt.quizId });
         if (quiz) {
@@ -266,18 +284,19 @@ export const submitAttempt = async (req: Request, res: Response): Promise<void> 
               score += question.score;
             }
           }
-          attempt.finalScore = score;
+          await finalizeAttemptScore(attempt._id.toString(), score);
         }
       } catch (err) {
         console.error('Score computation failed:', err);
       }
     }
 
-    await attempt.save();
+    // Re-fetch the attempt to pick up any changes from finalizeAttemptScore
+    const updatedAttempt = await Attempt.findById(attemptId) || attempt;
     
-    broadcastToQuiz(attempt.quizId, 'attempt_updated', attempt);
+    broadcastToQuiz(updatedAttempt.quizId, 'attempt_updated', updatedAttempt);
     
-    res.status(200).json(attempt);
+    res.status(200).json(updatedAttempt);
   } catch (error) {
     console.error('submitAttempt error:', error);
     res.status(500).json({ error: 'Internal server error' });
