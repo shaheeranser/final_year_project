@@ -3,9 +3,9 @@
  * Produced inside the Web Worker, consumed by the main thread.
  */
 export interface Detection {
-  /** e.g. "cell phone", "book", "laptop", "head_pose", "eye_gaze" */
+  /** e.g. "cell phone", "book", "laptop", "head_pose", "eye_gaze", "identity_mismatch" */
   label: string;
-  /** Confidence score 0-1 (from coco-ssd) or 1.0 for pose/gaze flags */
+  /** Confidence score 0-1 (from coco-ssd) or distance/1.0 for pose/gaze/identity flags */
   confidence: number;
   /** Bounding box in pixel coordinates (only for object detections) */
   bbox?: {
@@ -21,7 +21,7 @@ export interface Detection {
  * Created by the useViolationAggregator hook.
  */
 export interface Violation {
-  /** The flag string that caused this violation, e.g. "cell phone", "head_pose", "eye_gaze" */
+  /** The flag string that caused this violation, e.g. "cell phone", "head_pose", "eye_gaze", "identity_mismatch" */
   flag: string;
   /** ISO timestamp when the violation was confirmed */
   timestamp: string;

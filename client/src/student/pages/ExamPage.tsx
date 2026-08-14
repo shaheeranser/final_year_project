@@ -101,7 +101,10 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   const handleViolation = useCallback(
     (flag: string) => {
       setLastFlag(flag);
-      if (status !== 'warning' && status !== 'terminated') {
+      if (flag === 'identity_mismatch') {
+        // Continuous identity consistency check: log-only policy, runs silently in background
+        report(flag, 'soft');
+      } else if (status !== 'warning' && status !== 'terminated') {
         setStatus('warning');
         report(flag, 'soft');
       }
@@ -122,6 +125,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     hasFace,
     error: workerError,
     setVideo,
+    captureBaseline,
     start: startDetection,
     stop: stopDetection,
   } = useDetectionWorker({
@@ -222,8 +226,9 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     if (workerReady && cameraReady && quiz && status === 'loading') {
       setStatus('active');
       startDetection();
+      captureBaseline();
     }
-  }, [workerReady, cameraReady, quiz, status, startDetection]);
+  }, [workerReady, cameraReady, quiz, status, startDetection, captureBaseline]);
 
   // ── Timer ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -243,7 +248,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [status, report, timeLeft !== null]);
+  }, [status, report, timeLeft]);
 
   // ── Answer selection ──────────────────────────────────────────────
   const selectAnswer = (questionId: string, optionId: string) => {

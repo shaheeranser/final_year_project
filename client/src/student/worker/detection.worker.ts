@@ -117,6 +117,10 @@ export function analyzeLighting(
   return 'ok';
 }
 
+// ── Identity Consistency Constants ──────────────────────────────────
+export const IDENTITY_CHECK_INTERVAL_MS = 25000; // ~every 25 seconds
+export const IDENTITY_MATCH_THRESHOLD = 0.6; // Euclidean distance threshold (face-api.js default)
+
 // ── Detection Engine ─────────────────────────────────────────────────
 
 export interface DetectionEngine {
@@ -124,6 +128,10 @@ export interface DetectionEngine {
   init(onProgress: (stage: string, progress: number) => void): Promise<void>;
   /** Run all detection models on a single video frame. */
   detect(video: HTMLVideoElement): Promise<{ detections: Detection[]; hasFace: boolean }>;
+  /** Capture baseline face descriptor from initial snapshot or video frame. */
+  captureBaseline(input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement): Promise<boolean>;
+  /** Check current frame against baseline face descriptor. Returns identity_mismatch detection if distance >= threshold. */
+  checkIdentity(video: HTMLVideoElement): Promise<Detection | null>;
   /** Tear down models and release resources. */
   stop(): void;
 }
@@ -131,6 +139,9 @@ export interface DetectionEngine {
 export function createDetectionEngine(): DetectionEngine {
   let cocoModel: import('@tensorflow-models/coco-ssd').ObjectDetection | null = null;
   let faceLandmarker: import('@mediapipe/tasks-vision').FaceLandmarker | null = null;
+  let faceapi: typeof import('@vladmandic/face-api') | null = null;
+  let baselineDescriptor: Float32Array | null = null;
+  let faceapiLoaded = false;
   let stopped = false;
   
   let lightingCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
@@ -160,7 +171,7 @@ export function createDetectionEngine(): DetectionEngine {
         cocoModel = await cocoSsd.load();
 
         // 2. MediaPipe FaceLandmarker
-        onProgress('Loading face landmark model…', 0.6);
+        onProgress('Loading face landmark model…', 0.5);
         const { FaceLandmarker, FilesetResolver } = await import(
           '@mediapipe/tasks-vision'
         );
@@ -180,12 +191,74 @@ export function createDetectionEngine(): DetectionEngine {
           outputFacialTransformationMatrixes: true,
         });
 
+        // 3. face-api.js for identity consistency check
+        onProgress('Loading identity recognition model…', 0.8);
+        faceapi = await import('@vladmandic/face-api');
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+        await Promise.all([
+          faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+          faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+          faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+        ]);
+        faceapiLoaded = true;
+
         onProgress('Ready', 1.0);
       } catch (err) {
         throw new Error(
           `Model init failed: ${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    },
+
+    async captureBaseline(input: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement): Promise<boolean> {
+      if (!faceapi || !faceapiLoaded || stopped) return false;
+      try {
+        const detection = await faceapi
+          .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (detection && detection.descriptor) {
+          baselineDescriptor = new Float32Array(detection.descriptor);
+          return true;
+        }
+      } catch (err) {
+        console.warn('Baseline capture failed:', err);
+      }
+      return false;
+    },
+
+    async checkIdentity(video: HTMLVideoElement): Promise<Detection | null> {
+      if (!faceapi || !faceapiLoaded || stopped) return null;
+
+      // If baseline has not been captured yet, try capturing from current video frame
+      if (!baselineDescriptor) {
+        await this.captureBaseline(video);
+        if (!baselineDescriptor) return null;
+      }
+
+      try {
+        const detection = await faceapi
+          .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.4 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+
+        if (!detection || !detection.descriptor) {
+          // No face detected during identity check; presence loss guard handles missing face
+          return null;
+        }
+
+        const distance = faceapi.euclideanDistance(baselineDescriptor, detection.descriptor);
+        if (distance >= IDENTITY_MATCH_THRESHOLD) {
+          return {
+            label: 'identity_mismatch',
+            confidence: Number(distance.toFixed(4)),
+          };
+        }
+      } catch (err) {
+        console.warn('Identity check error:', err);
+      }
+      return null;
     },
 
     async detect(video: HTMLVideoElement): Promise<{ detections: Detection[]; hasFace: boolean }> {
@@ -272,6 +345,9 @@ export function createDetectionEngine(): DetectionEngine {
     stop() {
       stopped = true;
       cocoModel = null;
+      faceapi = null;
+      baselineDescriptor = null;
+      faceapiLoaded = false;
       if (faceLandmarker) {
         faceLandmarker.close();
         faceLandmarker = null;

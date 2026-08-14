@@ -396,7 +396,7 @@ export function ReviewPage() {
                     <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>{incident.flagType.replace('_', ' ')}</span>
                     <span style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-ink-muted)' }}>{new Date(incident.occurredAt).toLocaleTimeString()}</span>
                   </div>
-                  <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
                     <span style={{ 
                       display: 'inline-block', 
                       padding: '2px 8px', 
@@ -409,6 +409,19 @@ export function ReviewPage() {
                     }}>
                       {incident.severity}
                     </span>
+                    {incident.flagType === 'identity_mismatch' && (
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '11px',
+                        fontWeight: 500,
+                        background: 'rgba(59, 130, 246, 0.12)',
+                        color: '#2563eb',
+                      }}>
+                        ℹ Identity Consistency Check — Compare with initial Student Identity snapshot
+                      </span>
+                    )}
                   </div>
                   {incident.snapshotUrl && (
                     <div style={{ marginTop: 'var(--space-md)' }}>

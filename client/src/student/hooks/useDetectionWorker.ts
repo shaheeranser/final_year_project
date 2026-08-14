@@ -15,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Detection } from '../../shared/types/detection';
 import {
   createDetectionEngine,
+  IDENTITY_CHECK_INTERVAL_MS,
   type DetectionEngine,
 } from '../worker/detection.worker';
 
@@ -49,6 +50,7 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
   onDetectionsRef.current = opts.onDetections;
 
   const detectingRef = useRef(false); // concurrency guard
+  const identityCheckingRef = useRef(false); // identity check concurrency guard
 
   const [state, setState] = useState<DetectionWorkerState>({
     ready: false,
@@ -110,6 +112,33 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
     }
   }, []);
 
+  // ── Run identity re-check periodically ────────────────────────────
+  const runIdentityCheck = useCallback(async () => {
+    const engine = engineRef.current;
+    const video = videoRef.current;
+    if (!engine || !video || video.readyState < 2 || identityCheckingRef.current) return;
+
+    identityCheckingRef.current = true;
+    try {
+      const result = await engine.checkIdentity(video);
+      if (result) {
+        onDetectionsRef.current?.([result]);
+      }
+    } catch {
+      // transient frame errors are silently ignored
+    } finally {
+      identityCheckingRef.current = false;
+    }
+  }, []);
+
+  // ── Capture Baseline ──────────────────────────────────────────────
+  const captureBaseline = useCallback(async (input?: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement) => {
+    const engine = engineRef.current;
+    const target = input || videoRef.current;
+    if (!engine || !target) return false;
+    return await engine.captureBaseline(target);
+  }, []);
+
   // ── Set up interval timers when ready ─────────────────────────────
   const startTimersRef = useRef<(() => void) | null>(null);
   const stopTimersRef = useRef<(() => void) | null>(null);
@@ -117,23 +146,28 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
   useEffect(() => {
     let objectTimer: ReturnType<typeof setInterval> | null = null;
     let faceTimer: ReturnType<typeof setInterval> | null = null;
+    let identityTimer: ReturnType<typeof setInterval> | null = null;
 
     startTimersRef.current = () => {
       // Object detection at 1 fps
       objectTimer = setInterval(runDetection, OBJECT_DETECT_INTERVAL);
       // Face detection at 4 fps
       faceTimer = setInterval(runDetection, FACE_DETECT_INTERVAL);
+      // Identity check ~every 25s
+      identityTimer = setInterval(runIdentityCheck, IDENTITY_CHECK_INTERVAL_MS);
     };
 
     stopTimersRef.current = () => {
       if (objectTimer) clearInterval(objectTimer);
       if (faceTimer) clearInterval(faceTimer);
+      if (identityTimer) clearInterval(identityTimer);
       objectTimer = null;
       faceTimer = null;
+      identityTimer = null;
     };
 
     return () => stopTimersRef.current?.();
-  }, [runDetection]);
+  }, [runDetection, runIdentityCheck]);
 
   // ── Public API ────────────────────────────────────────────────────
 
@@ -156,6 +190,7 @@ export function useDetectionWorker(opts: UseDetectionWorkerOptions = {}) {
   return {
     ...state,
     setVideo,
+    captureBaseline,
     start,
     stop,
   };

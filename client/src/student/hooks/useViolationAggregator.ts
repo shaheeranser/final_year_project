@@ -11,8 +11,13 @@
 import { useCallback, useRef } from 'react';
 import type { Detection } from '../../shared/types/detection';
 
-/** How many consecutive frames a flag must appear before it counts */
-const CONSECUTIVE_THRESHOLD = 3;
+/** Default consecutive threshold for standard object/pose/gaze checks */
+const DEFAULT_CONSECUTIVE_THRESHOLD = 3;
+
+/** Custom consecutive thresholds for specific signals */
+const REQUIRED_CONSECUTIVE_THRESHOLDS: Record<string, number> = {
+  identity_mismatch: 2, // Sustained across 2 consecutive periodic checks
+};
 
 interface UseViolationAggregatorOptions {
   /** Called when a flag has been confirmed after debounce */
@@ -21,8 +26,8 @@ interface UseViolationAggregatorOptions {
 
 /**
  * Tracks per-flag consecutive-frame counts.
- * Key = flag label (e.g. "cell phone", "head_pose", "eye_gaze")
- * Value = number of consecutive frames the flag has appeared
+ * Key = flag label (e.g. "cell phone", "head_pose", "eye_gaze", "identity_mismatch")
+ * Value = number of consecutive frames/checks the flag has appeared
  */
 type FlagCounters = Record<string, number>;
 
@@ -34,7 +39,7 @@ export function useViolationAggregator({ onViolation }: UseViolationAggregatorOp
   /**
    * Call this every time a new batch of detections arrives from the worker.
    * It will debounce and call onViolation only when a flag has persisted
-   * for CONSECUTIVE_THRESHOLD frames.
+   * for its required consecutive threshold.
    */
   const processDetections = useCallback(
     (detections: Detection[]) => {
@@ -54,8 +59,10 @@ export function useViolationAggregator({ onViolation }: UseViolationAggregatorOp
         if (currentFlags.has(flag)) {
           counters[flag] = (counters[flag] ?? 0) + 1;
 
+          const requiredThreshold = REQUIRED_CONSECUTIVE_THRESHOLDS[flag] ?? DEFAULT_CONSECUTIVE_THRESHOLD;
+
           // Fire if threshold reached and not already fired
-          if (counters[flag] >= CONSECUTIVE_THRESHOLD && !fired.has(flag)) {
+          if (counters[flag] >= requiredThreshold && !fired.has(flag)) {
             fired.add(flag);
             onViolation(flag);
             // Reset so the same flag can fire again if it reappears after a gap
