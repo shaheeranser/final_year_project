@@ -65,13 +65,11 @@ export function useViolationAggregator({ onViolation }: UseViolationAggregatorOp
           if (counters[flag] >= requiredThreshold && !fired.has(flag)) {
             fired.add(flag);
             onViolation(flag);
-            // Reset so the same flag can fire again if it reappears after a gap
-            counters[flag] = 0;
-            fired.delete(flag);
           }
         } else {
-          // Flag not present → reset its counter
+          // Flag not present → reset its counter and clear fired status so it can trigger again later
           counters[flag] = 0;
+          fired.delete(flag);
         }
       }
     },

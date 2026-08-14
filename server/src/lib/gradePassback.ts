@@ -83,8 +83,8 @@ export async function doPassback(attempt: InstanceType<typeof Attempt>): Promise
 
   const gradeObj = {
     userId: attempt.ltiContext.ltiUserId!,
-    scoreGiven: attempt.finalScore,
-    scoreMaximum,
+    scoreGiven: scoreMaximum > 0 ? attempt.finalScore! / scoreMaximum : 0,
+    scoreMaximum: 1,
     activityProgress: 'Completed',
     gradingProgress: 'FullyGraded',
   };

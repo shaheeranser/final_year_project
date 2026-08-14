@@ -22,7 +22,8 @@ html {
 
 body {
   font-family: var(--font-sans);
-  background: var(--color-bg);
+  background: linear-gradient(145deg, var(--color-bg) 0%, color-mix(in srgb, var(--color-bg) 92%, var(--color-accent)) 100%);
+  background-attachment: fixed;
   color: var(--color-ink);
   line-height: 1.6;
   min-height: 100vh;
@@ -146,8 +147,10 @@ p {
 }
 
 .layout__header {
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 50%, transparent);
   padding: var(--space-md) var(--space-xl);
   position: sticky;
   top: 0;
@@ -155,6 +158,7 @@ p {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-shadow: var(--shadow-sm);
 }
 
 .layout__main {
@@ -317,11 +321,17 @@ p {
 }
 
 .exam-page__question-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: var(--space-xl);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--color-surface) 95%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--color-border) 60%, transparent);
+  border-radius: var(--radius-xl);
+  padding: var(--space-2xl);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.02);
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+.exam-page__question-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.06), 0 4px 12px rgba(0, 0, 0, 0.03);
 }
 
 .exam-page__question-nav {
@@ -352,10 +362,11 @@ p {
 
 .exam-page__question-text {
   font-family: var(--font-sans);
-  font-size: var(--font-size-lg);
-  line-height: 1.6;
+  font-size: var(--font-size-xl);
+  font-weight: 500;
+  line-height: 1.5;
   color: var(--color-ink);
-  margin-bottom: var(--space-xl);
+  margin-bottom: var(--space-2xl);
 }
 
 /* ── Option Buttons ─────────────────────────────────────────────────── */
@@ -372,29 +383,34 @@ p {
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  background: var(--color-bg);
-  border: 2px solid var(--color-border);
-  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-bg) 50%, var(--color-surface));
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   text-align: left;
   font-family: var(--font-sans);
   font-size: var(--font-size-md);
   color: var(--color-ink);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
 }
 
 .exam-page__option:hover {
-  border-color: var(--color-ink-muted);
+  border-color: var(--color-accent);
   background: var(--color-surface);
+  transform: translateX(4px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
 }
 
 .exam-page__option--selected {
-  border-color: var(--color-primary, #4f46e5);
-  background: color-mix(in srgb, var(--color-primary, #4f46e5) 8%, var(--color-surface));
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  box-shadow: 0 0 0 1px var(--color-accent);
 }
 
 .exam-page__option--selected:hover {
-  border-color: var(--color-primary, #4f46e5);
+  border-color: var(--color-accent);
+  transform: translateX(4px);
 }
 
 .exam-page__option-letter {
@@ -414,9 +430,10 @@ p {
 }
 
 .exam-page__option--selected .exam-page__option-letter {
-  background: var(--color-primary, #4f46e5);
-  border-color: var(--color-primary, #4f46e5);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
   color: #fff;
+  transform: scale(1.1);
 }
 
 .exam-page__option-text {
@@ -467,9 +484,10 @@ p {
 }
 
 .exam-page__palette-btn--current {
-  border-color: var(--color-primary, #4f46e5);
+  border-color: var(--color-accent);
   background: var(--color-surface);
-  color: var(--color-primary, #4f46e5);
+  color: var(--color-accent);
+  transform: scale(1.1);
 }
 
 .exam-page__palette-btn--answered {
@@ -479,8 +497,8 @@ p {
 }
 
 .exam-page__palette-btn--current.exam-page__palette-btn--answered {
-  border-color: var(--color-primary, #4f46e5);
-  box-shadow: 0 0 0 2px var(--color-primary, #4f46e5);
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 2px var(--color-accent);
 }
 
 /* ── Webcam Sidebar (right) ─────────────────────────────────────────── */

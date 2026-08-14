@@ -20,7 +20,6 @@ import { useViolationAggregator } from '../hooks/useViolationAggregator';
 import { useVisibilityGuard } from '../hooks/useVisibilityGuard';
 import { usePresenceLossGuard } from '../hooks/usePresenceLossGuard';
 import { useMultiplePersonGuard } from '../hooks/useMultiplePersonGuard';
-import { WarningOverlay } from './WarningOverlay';
 import { TerminatedScreen } from './TerminatedScreen';
 import { reportIncident, submitAttempt, fetchQuizForStudent, fetchAttemptStatus, uploadPreviewFrame } from '../../shared/api/attempt';
 import type { StudentQuiz } from '../../shared/api/attempt';
@@ -39,9 +38,9 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [status, setStatus] = useState<ExamStatus>('loading');
-  const [strikes, setStrikes] = useState(0);
-  const [lastFlag, setLastFlag] = useState<string>('');
-  const [terminationReason, setTerminationReason] = useState<string>('strikes');
+  const [terminationReason, setTerminationReason] = useState<string>('time_expired');
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
 
@@ -91,8 +90,6 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
         if (attempt.status === 'terminated') {
           setTerminationReason(attempt.terminationReason || flagType);
           setStatus('terminated');
-        } else {
-          setStrikes(attempt.strikeCount);
         }
       } catch (err) {
         console.error('Failed to report incident', err);
@@ -101,20 +98,36 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     [attemptId],
   );
 
+  const showToastForFlag = useCallback((flag: string) => {
+    const messages: Record<string, string> = {
+      'cell phone': 'Please keep phones away during the exam.',
+      book: 'Please clear your workspace of unauthorized materials.',
+      laptop: 'Please use only your primary screen.',
+      head_pose: 'Please look towards the screen.',
+      eye_gaze: 'Please keep your eyes on the screen.',
+      tab_switch: 'Please do not leave the exam window.',
+      camera_lost: 'Please adjust your camera to ensure you are visible.',
+      multiple_people: 'Please ensure you are alone in the room.',
+      identity_mismatch: 'Please ensure your face is clearly visible.',
+    };
+    setToastMessage(messages[flag] || 'Please follow exam rules.');
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    toastTimeoutRef.current = setTimeout(() => setToastMessage(null), 4000);
+  }, []);
+
   // ── Violation callback (Soft) ──────────────────────────────────────
   const handleViolation = useCallback(
     (flag: string) => {
       if (isPaused) return; // Don't process violations while paused
-      setLastFlag(flag);
       if (flag === 'identity_mismatch') {
         // Continuous identity consistency check: log-only policy, runs silently in background
         report(flag, 'soft');
-      } else if (status !== 'warning' && status !== 'terminated') {
-        setStatus('warning');
+      } else if (status !== 'terminated') {
+        showToastForFlag(flag);
         report(flag, 'soft');
       }
     },
-    [status, report, isPaused],
+    [status, report, isPaused, showToastForFlag],
   );
 
   // ── Hooks ─────────────────────────────────────────────────────────
@@ -139,13 +152,12 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
   // Tab-switch guard (Hard) — disabled while paused
   useVisibilityGuard({
-    enabled: !isPaused && (status === 'active' || status === 'warning'),
+    enabled: !isPaused && status === 'active',
     debounceMs: 0,
     onHidden: useCallback(() => {
-      setLastFlag('tab_switch');
-      setStatus('warning');
+      showToastForFlag('tab_switch');
       report('tab_switch', 'hard');
-    }, [report]),
+    }, [report, showToastForFlag]),
   });
 
   // Presence loss guard (Hard) — disabled while paused
@@ -153,10 +165,9 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     hasFace,
     enabled: !isPaused && status === 'active',
     onCameraLost: useCallback(() => {
-      setLastFlag('camera_lost');
-      setStatus('warning');
+      showToastForFlag('camera_lost');
       report('camera_lost', 'hard');
-    }, [report])
+    }, [report, showToastForFlag])
   });
 
   // Multiple people guard (Hard) — disabled while paused
@@ -164,10 +175,9 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     detections,
     enabled: !isPaused && status === 'active',
     onMultiplePeople: useCallback(() => {
-      setLastFlag('multiple_people');
-      setStatus('warning');
+      showToastForFlag('multiple_people');
       report('multiple_people', 'hard');
-    }, [report])
+    }, [report, showToastForFlag])
   });
 
   // ── Stop detection on termination or submission ────────────────────
@@ -182,7 +192,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
   // ── Halt/resume detection during pause ─────────────────────────────
   useEffect(() => {
-    if (status !== 'active' && status !== 'warning') return;
+    if (status !== 'active') return;
     if (isPaused) {
       stopDetection();
     } else {
@@ -247,7 +257,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
   // ── Timer ─────────────────────────────────────────────────────────
   useEffect(() => {
-    if (status !== 'active' && status !== 'warning') return;
+    if (status !== 'active') return;
     if (timeLeft === null) return;
     if (isPaused) return; // Freeze timer while paused
 
@@ -268,7 +278,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
 
   // ── Status Polling (pause & preview) ──────────────────────────────
   useEffect(() => {
-    if (status !== 'active' && status !== 'warning') return;
+    if (status !== 'active') return;
 
     const pollInterval = setInterval(async () => {
       try {
@@ -322,11 +332,6 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     }
   };
 
-  // ── Warning acknowledgement ───────────────────────────────────────
-  const handleAcknowledge = useCallback(() => {
-    setStatus('active');
-  }, []);
-
   // ── Render ────────────────────────────────────────────────────────
 
   if (status === 'terminated') {
@@ -375,7 +380,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
               </h1>
               <div style={{ minWidth: '400px' }}>
                 <StatusRail 
-                  status={status === 'warning' ? 'warning' : 'active'}
+                  status="active"
                   progress={timeLeft !== null ? (timeLeft / ((quiz?.attemptDurationMinutes ?? 60) * 60)) * 100 : 100}
                   label={timeLeft !== null ? formatTime(timeLeft) : '--:--'}
                 />
@@ -499,10 +504,9 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
           </div>
         </div>
 
-        {/* ── Webcam & Detection Sidebar ── */}
-        <div className="exam-page__sidebar">
-          {/* Hide the video container from the student while preserving functionality */}
-          <div className="exam-page__video-container" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none', zIndex: -1 }}>
+        {/* ── Webcam & Detection (Hidden UI, active functionality) ── */}
+        <div className="exam-page__sidebar" style={{ display: 'none' }}>
+          <div className="exam-page__video-container">
             <video
               ref={videoRef}
               className="exam-page__video"
@@ -515,39 +519,38 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
               height={videoDimensions.height}
             />
           </div>
-
-          <div className="exam-page__info">
-            <div className="exam-page__strikes">
-              <span>Strikes:</span>
-              <span className={`exam-page__strike-count ${strikes > 0 ? 'exam-page__strike-count--danger' : ''}`}>
-                {strikes} / 2
-              </span>
-            </div>
-            <div className="exam-page__active-flags">
-              {detections.length > 0 ? (
-                detections.map((d, i) => (
-                  <span key={`${d.label}-${i}`} className="exam-page__flag-badge">
-                    {d.label.replace('_', ' ')}
-                  </span>
-                ))
-              ) : (
-                <span className="exam-page__no-flags">No issues detected</span>
-              )}
-            </div>
-          </div>
         </div>
       </div>
 
-      {status === 'warning' && (
-        <WarningOverlay
-          flag={lastFlag}
-          strikes={strikes}
-          onAcknowledge={handleAcknowledge}
-        />
+      {/* ── Toast Overlay ── */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          top: 'var(--space-2xl)',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'rgba(15, 23, 42, 0.85)',
+          backdropFilter: 'blur(12px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          color: '#fff',
+          padding: '16px 32px',
+          borderRadius: '100px',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.05) inset',
+          fontWeight: 500,
+          fontSize: '15px',
+          zIndex: 9999,
+          animation: 'slideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+        }}>
+          <span style={{ fontSize: '20px' }}>⚠️</span>
+          {toastMessage}
+        </div>
       )}
 
       {/* ── Pause Overlay ── */}
-      {isPaused && (status === 'active' || status === 'warning') && (
+      {isPaused && status === 'active' && (
         <div style={{
           position: 'fixed',
           top: 0,
@@ -580,7 +583,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       )}
 
       {/* ── Preview Disclosure ── */}
-      {isPreviewActive && !isPaused && (status === 'active' || status === 'warning') && (
+      {isPreviewActive && !isPaused && status === 'active' && (
         <div style={{
           position: 'fixed',
           bottom: 'var(--space-lg)',
