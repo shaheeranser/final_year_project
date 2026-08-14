@@ -8,16 +8,29 @@ export interface ILtiContext {
   ltiUserId: string | null;
 }
 
+export interface IPauseLogEntry {
+  pausedAt: Date;
+  resumedAt: Date | null;
+  pausedByUserId: string;
+  note: string | null;
+}
+
 export interface IAttempt extends Document {
   quizId: string;
   studentUserId: string;
   status: 'not_started' | 'in_progress' | 'terminated' | 'completed';
-  terminationReason: 'strikes' | 'camera_lost' | 'tab_switch' | 'time_expired' | 'manual' | string | null;
+  terminationReason: 'strikes' | 'camera_lost' | 'tab_switch' | 'time_expired' | 'manually_closed' | 'manual' | string | null;
   startedAt: Date | null;
   endedAt: Date | null;
   strikeCount: number;
   answers: { questionId: string; selectedOptionId: string }[];
   identitySnapshotKey: string | null;
+  pausedByTeacher: boolean;
+  pauseLog: IPauseLogEntry[];
+  previewActive: boolean;
+  previewRequestedByUserId: string | null;
+  previewStartedAt: Date | null;
+  computedScore: number | null;
   needsReview: boolean;
   reviewOutcome: 'upheld' | 'dismissed' | 'retest_granted' | null;
   reviewedByUserId: string | null;
@@ -43,6 +56,13 @@ const LtiContextSchema = new Schema({
   ltiUserId: { type: String, default: null },
 }, { _id: false });
 
+const PauseLogEntrySchema = new Schema({
+  pausedAt: { type: Date, required: true },
+  resumedAt: { type: Date, default: null },
+  pausedByUserId: { type: String, required: true },
+  note: { type: String, default: null },
+}, { _id: false });
+
 const AttemptSchema = new Schema<IAttempt>({
   quizId: { type: String, required: true, index: true },
   studentUserId: { type: String, required: true },
@@ -53,6 +73,12 @@ const AttemptSchema = new Schema<IAttempt>({
   strikeCount: { type: Number, default: 0 },
   answers: { type: [AnswerSchema], default: [] },
   identitySnapshotKey: { type: String, default: null },
+  pausedByTeacher: { type: Boolean, default: false },
+  pauseLog: { type: [PauseLogEntrySchema], default: [] },
+  previewActive: { type: Boolean, default: false },
+  previewRequestedByUserId: { type: String, default: null },
+  previewStartedAt: { type: Date, default: null },
+  computedScore: { type: Number, default: null },
   needsReview: { type: Boolean, default: false },
   reviewOutcome: { type: String, enum: ['upheld', 'dismissed', 'retest_granted', null], default: null },
   reviewedByUserId: { type: String, default: null },

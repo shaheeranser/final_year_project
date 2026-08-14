@@ -22,7 +22,7 @@ import { usePresenceLossGuard } from '../hooks/usePresenceLossGuard';
 import { useMultiplePersonGuard } from '../hooks/useMultiplePersonGuard';
 import { WarningOverlay } from './WarningOverlay';
 import { TerminatedScreen } from './TerminatedScreen';
-import { reportIncident, submitAttempt, fetchQuizForStudent } from '../../shared/api/attempt';
+import { reportIncident, submitAttempt, fetchQuizForStudent, fetchAttemptStatus, uploadPreviewFrame } from '../../shared/api/attempt';
 import type { StudentQuiz } from '../../shared/api/attempt';
 import type { Answer } from '../../shared/types/attempt';
 import { captureSnapshot } from '../lib/snapshot';
@@ -54,6 +54,10 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   // Timer — uses quiz.attemptDurationMinutes when available, else 60 minutes
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [videoDimensions, setVideoDimensions] = useState({ width: 640, height: 480 });
+
+  // Pause & Preview state (teacher-initiated, polled from status endpoint)
+  const [isPaused, setIsPaused] = useState(false);
+  const [isPreviewActive, setIsPreviewActive] = useState(false);
 
   // ── Fetch quiz questions ──────────────────────────────────────────
   useEffect(() => {
@@ -100,6 +104,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   // ── Violation callback (Soft) ──────────────────────────────────────
   const handleViolation = useCallback(
     (flag: string) => {
+      if (isPaused) return; // Don't process violations while paused
       setLastFlag(flag);
       if (flag === 'identity_mismatch') {
         // Continuous identity consistency check: log-only policy, runs silently in background
@@ -109,7 +114,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
         report(flag, 'soft');
       }
     },
-    [status, report],
+    [status, report, isPaused],
   );
 
   // ── Hooks ─────────────────────────────────────────────────────────
@@ -132,35 +137,35 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     onDetections: processDetections,
   });
 
-  // Tab-switch guard (Hard)
+  // Tab-switch guard (Hard) — disabled while paused
   useVisibilityGuard({
-    enabled: status === 'active' || status === 'warning',
+    enabled: !isPaused && (status === 'active' || status === 'warning'),
     debounceMs: 0,
     onHidden: useCallback(() => {
-      setTerminationReason('tab_switch');
-      setStatus('terminated');
+      setLastFlag('tab_switch');
+      setStatus('warning');
       report('tab_switch', 'hard');
     }, [report]),
   });
 
-  // Presence loss guard (Hard)
+  // Presence loss guard (Hard) — disabled while paused
   usePresenceLossGuard({
     hasFace,
-    enabled: status === 'active',
+    enabled: !isPaused && status === 'active',
     onCameraLost: useCallback(() => {
-      setTerminationReason('camera_lost');
-      setStatus('terminated');
+      setLastFlag('camera_lost');
+      setStatus('warning');
       report('camera_lost', 'hard');
     }, [report])
   });
 
-  // Multiple people guard (Hard)
+  // Multiple people guard (Hard) — disabled while paused
   useMultiplePersonGuard({
     detections,
-    enabled: status === 'active',
+    enabled: !isPaused && status === 'active',
     onMultiplePeople: useCallback(() => {
-      setTerminationReason('multiple_people');
-      setStatus('terminated');
+      setLastFlag('multiple_people');
+      setStatus('warning');
       report('multiple_people', 'hard');
     }, [report])
   });
@@ -174,6 +179,16 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       streamRef.current?.getTracks().forEach((t) => t.stop());
     }
   }, [status, stopDetection, resetAggregator]);
+
+  // ── Halt/resume detection during pause ─────────────────────────────
+  useEffect(() => {
+    if (status !== 'active' && status !== 'warning') return;
+    if (isPaused) {
+      stopDetection();
+    } else {
+      startDetection();
+    }
+  }, [isPaused, status, stopDetection, startDetection]);
 
   // ── Request webcam ────────────────────────────────────────────────
   useEffect(() => {
@@ -234,6 +249,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   useEffect(() => {
     if (status !== 'active' && status !== 'warning') return;
     if (timeLeft === null) return;
+    if (isPaused) return; // Freeze timer while paused
 
     const interval = setInterval(() => {
       setTimeLeft(prev => {
@@ -248,7 +264,40 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [status, report, timeLeft]);
+  }, [status, report, timeLeft, isPaused]);
+
+  // ── Status Polling (pause & preview) ──────────────────────────────
+  useEffect(() => {
+    if (status !== 'active' && status !== 'warning') return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusData = await fetchAttemptStatus(attemptId);
+        setIsPaused(statusData.pausedByTeacher);
+        setIsPreviewActive(statusData.previewActive);
+      } catch (err) {
+        console.error('Status poll failed:', err);
+      }
+    }, 7000); // Poll every 7 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [attemptId, status]);
+
+  // ── Preview Frame Upload ──────────────────────────────────────────
+  useEffect(() => {
+    if (!isPreviewActive || !videoRef.current) return;
+
+    const frameInterval = setInterval(() => {
+      if (videoRef.current) {
+        const frame = captureSnapshot(videoRef.current);
+        if (frame) {
+          uploadPreviewFrame(attemptId, frame).catch(() => {});
+        }
+      }
+    }, 1500); // Post frame every 1.5 seconds
+
+    return () => clearInterval(frameInterval);
+  }, [isPreviewActive, attemptId]);
 
   // ── Answer selection ──────────────────────────────────────────────
   const selectAnswer = (questionId: string, optionId: string) => {
@@ -495,6 +544,62 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
           strikes={strikes}
           onAcknowledge={handleAcknowledge}
         />
+      )}
+
+      {/* ── Pause Overlay ── */}
+      {isPaused && (status === 'active' || status === 'warning') && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+        }}>
+          <div style={{
+            textAlign: 'center',
+            padding: 'var(--space-2xl)',
+            maxWidth: '500px',
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: 'var(--space-lg)' }}>⏸️</div>
+            <h2 style={{ color: '#fff', fontFamily: 'var(--font-serif)', fontSize: 'var(--font-size-xl)', marginBottom: 'var(--space-md)' }}>
+              Exam Paused
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.8)', fontSize: 'var(--font-size-md)', lineHeight: 1.6 }}>
+              Your instructor has paused your exam — please wait.
+            </p>
+            <p style={{ color: 'rgba(255,255,255,0.5)', fontSize: 'var(--font-size-sm)', marginTop: 'var(--space-lg)' }}>
+              Your timer is frozen and will resume when the instructor continues the exam.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── Preview Disclosure ── */}
+      {isPreviewActive && !isPaused && (status === 'active' || status === 'warning') && (
+        <div style={{
+          position: 'fixed',
+          bottom: 'var(--space-lg)',
+          right: 'var(--space-lg)',
+          padding: 'var(--space-sm) var(--space-md)',
+          background: 'rgba(59, 130, 246, 0.15)',
+          border: '1px solid rgba(59, 130, 246, 0.3)',
+          borderRadius: 'var(--radius-md)',
+          color: '#60a5fa',
+          fontSize: 'var(--font-size-sm)',
+          fontWeight: 500,
+          zIndex: 100,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--space-xs)',
+        }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#60a5fa', animation: 'pulse 2s infinite' }} />
+          Your instructor is currently viewing your feed
+        </div>
       )}
     </Layout>
   );

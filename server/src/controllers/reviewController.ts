@@ -24,8 +24,13 @@ export const listAttempts = async (req: Request, res: Response): Promise<void> =
         strikeCount: attempt.strikeCount,
         needsReview: attempt.needsReview,
         reviewOutcome: attempt.reviewOutcome,
+        computedScore: attempt.computedScore ?? null,
         finalScore: attempt.finalScore,
         gradePassedBack: attempt.gradePassedBack,
+        pausedByTeacher: attempt.pausedByTeacher ?? false,
+        terminationReason: attempt.terminationReason ?? null,
+        startedAt: attempt.startedAt,
+        endedAt: attempt.endedAt,
         createdAt: attempt.createdAt,
         incidentCount
       };

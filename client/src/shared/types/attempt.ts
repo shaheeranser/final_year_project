@@ -1,5 +1,5 @@
 export type AttemptStatus = 'not_started' | 'in_progress' | 'terminated' | 'completed';
-export type TerminationReason = 'strikes' | 'camera_lost' | 'tab_switch' | 'multiple_people' | 'time_expired' | 'manual' | null;
+export type TerminationReason = 'strikes' | 'camera_lost' | 'tab_switch' | 'multiple_people' | 'time_expired' | 'manually_closed' | 'manual' | null;
 export type ReviewOutcome = 'upheld' | 'dismissed' | 'retest_granted' | null;
 export type Severity = 'soft' | 'hard';
 
@@ -27,6 +27,10 @@ export interface Attempt {
   strikeCount: number;
   answers: Answer[];
   identitySnapshotKey: string | null;
+  pausedByTeacher: boolean;
+  previewActive?: boolean;
+  previewStartedAt?: string | null;
+  computedScore: number | null;
   needsReview: boolean;
   reviewOutcome: ReviewOutcome;
   reviewedByUserId: string | null;
@@ -53,7 +57,7 @@ export interface Incident {
 
 export interface EligibilityResponse {
   eligible: boolean;
-  reason?: 'NOT_PUBLISHED' | 'OUTSIDE_WINDOW' | 'NOT_ENROLLED' | 'ALREADY_COMPLETED';
+  reason?: 'NOT_PUBLISHED' | 'OUTSIDE_WINDOW' | 'NOT_ENROLLED' | 'ALREADY_COMPLETED' | 'MANUALLY_CLOSED';
   resumable?: boolean;
   attemptId?: string;
   canStartNew?: boolean;

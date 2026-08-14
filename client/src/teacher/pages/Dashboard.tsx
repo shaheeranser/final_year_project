@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Layout, StatusRail, Spinner, Button } from '../../shared/components';
 import { createOrGetDraftQuiz } from '../../shared/api/quiz';
-import { listAttempts } from '../../shared/api/attempt';
+import { listAttempts, approveAttemptApi, bulkApproveApi, pauseAttemptApi, resumeAttemptApi } from '../../shared/api/attempt';
 import type { Attempt } from '../../shared/types/attempt';
 
 export function Dashboard() {
@@ -10,7 +10,18 @@ export function Dashboard() {
   const [attempts, setAttempts] = useState<Attempt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bulkResult, setBulkResult] = useState<{ approved: string[]; skipped: { id: string; reason: string }[] } | null>(null);
+
   const navigate = useNavigate();
+
+  const refreshAttempts = async (resourceLinkId: string) => {
+    try {
+      const att = await listAttempts(resourceLinkId);
+      setAttempts(att);
+    } catch (err) {
+      console.error('Failed to refresh attempts', err);
+    }
+  };
 
   useEffect(() => {
     async function loadData() {
@@ -18,8 +29,7 @@ export function Dashboard() {
         const q = await createOrGetDraftQuiz();
         setQuiz(q);
         if (q.resourceLinkId) {
-          const att = await listAttempts(q.resourceLinkId);
-          setAttempts(att);
+          await refreshAttempts(q.resourceLinkId);
         }
         setLoading(false);
       } catch (err: any) {
@@ -37,18 +47,13 @@ export function Dashboard() {
     const ltik = sessionStorage.getItem('ltik');
     const es = new EventSource(`/api/quizzes/${quiz.resourceLinkId}/live-updates?ltik=${ltik}`, { withCredentials: true });
 
-    const refreshAttempts = async () => {
-      try {
-        const att = await listAttempts(quiz.resourceLinkId);
-        setAttempts(att);
-      } catch (err) {
-        console.error('Failed to refresh attempts', err);
-      }
+    const handleRefresh = async () => {
+      await refreshAttempts(quiz.resourceLinkId);
     };
 
-    es.addEventListener('attempt_created', refreshAttempts);
-    es.addEventListener('attempt_updated', refreshAttempts);
-    es.addEventListener('incident_reported', refreshAttempts);
+    es.addEventListener('attempt_created', handleRefresh);
+    es.addEventListener('attempt_updated', handleRefresh);
+    es.addEventListener('incident_reported', handleRefresh);
 
     return () => {
       es.close();
@@ -58,29 +63,79 @@ export function Dashboard() {
   if (loading) return <Spinner label="Loading Dashboard..." />;
   if (error) return <div className="dashboard-content"><p style={{color: 'var(--color-danger)'}}>{error}</p></div>;
 
-  const getStatusConfig = (att: Attempt) => {
-    if (att.status === 'not_started') return { s: 'pending', p: 0, l: 'Not Started' };
-    if (att.status === 'in_progress') return { s: 'active', p: 50, l: 'In Progress' };
-    if (att.status === 'completed') {
-      if (att.needsReview) return { s: 'warning', p: 100, l: 'Needs Review' };
-      if (att.reviewOutcome === 'upheld') return { s: 'error', p: 100, l: 'Violation Upheld' };
-      if (att.reviewOutcome === 'retest_granted') return { s: 'warning', p: 100, l: 'Retest Granted' };
-      return { s: 'success', p: 100, l: 'Completed' };
-    }
-    if (att.status === 'terminated') {
-      if (att.needsReview) return { s: 'warning', p: 100, l: 'Terminated (Needs Review)' };
-      if (att.reviewOutcome === 'dismissed') return { s: 'success', p: 100, l: 'Terminated (Dismissed)' };
-      if (att.reviewOutcome === 'retest_granted') return { s: 'warning', p: 100, l: 'Retest Granted' };
-      return { s: 'error', p: 100, l: `Terminated (${att.terminationReason})` };
-    }
-    return { s: 'pending', p: 0, l: att.status };
+  // ── Three-state classification ────────────────────────────────────
+  const getAttemptState = (att: Attempt): 'awaiting_approval' | 'awaiting_review' | 'resolved' | 'active' | 'not_started' => {
+    if (att.status === 'not_started') return 'not_started';
+    if (att.status === 'in_progress') return 'active';
+    // Finished states
+    if (att.finalScore !== null) return 'resolved';
+    if (att.needsReview) return 'awaiting_review';
+    if (att.reviewOutcome !== null) return 'resolved';
+    return 'awaiting_approval';
   };
 
-  /** True when the attempt is finalized but not yet needs-review (de-emphasized row) */
-  const isDeEmphasized = (att: Attempt) => !att.needsReview && att.finalScore !== null;
+  const getStatusConfig = (att: Attempt) => {
+    const state = getAttemptState(att);
+    switch (state) {
+      case 'not_started': return { s: 'neutral' as const, p: 0, l: 'Not Started', badge: null };
+      case 'active':
+        if (att.pausedByTeacher) return { s: 'warning' as const, p: 50, l: 'Paused', badge: '⏸ PAUSED' };
+        return { s: 'active' as const, p: 50, l: 'In Progress', badge: null };
+      case 'awaiting_approval': return { s: 'active' as const, p: 100, l: 'Awaiting Approval', badge: '✓ CLEAN' };
+      case 'awaiting_review': return { s: 'warning' as const, p: 100, l: 'Awaiting Review', badge: '⚠ FLAGGED' };
+      case 'resolved':
+        if (att.reviewOutcome === 'upheld') return { s: 'terminated' as const, p: 100, l: 'Upheld', badge: null };
+        if (att.reviewOutcome === 'retest_granted') return { s: 'warning' as const, p: 100, l: 'Retest Granted', badge: null };
+        return { s: 'active' as const, p: 100, l: 'Resolved', badge: null };
+    }
+  };
 
-  /** True when passback failed and needs attention */
+  const isResolved = (att: Attempt) => getAttemptState(att) === 'resolved';
   const hasPassbackFailure = (att: Attempt) => att.finalScore !== null && att.gradePassedBack === false;
+  const isAwaitingApproval = (att: Attempt) => getAttemptState(att) === 'awaiting_approval';
+
+  const awaitingApprovalAttempts = attempts.filter(isAwaitingApproval);
+
+  // ── Action handlers ─────────────────────────────────────────────
+  const handleApprove = async (attemptId: string) => {
+    try {
+      await approveAttemptApi(attemptId);
+      if (quiz?.resourceLinkId) await refreshAttempts(quiz.resourceLinkId);
+    } catch (err: any) {
+      alert(`Approve failed: ${err.message}`);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    if (!quiz?.resourceLinkId) return;
+    try {
+      const result = await bulkApproveApi(quiz.resourceLinkId, 'all');
+      setBulkResult(result);
+      await refreshAttempts(quiz.resourceLinkId);
+    } catch (err: any) {
+      alert(`Bulk approve failed: ${err.message}`);
+    }
+  };
+
+  const handlePause = async (attemptId: string) => {
+    try {
+      await pauseAttemptApi(attemptId);
+      if (quiz?.resourceLinkId) await refreshAttempts(quiz.resourceLinkId);
+    } catch (err: any) {
+      alert(`Pause failed: ${err.message}`);
+    }
+  };
+
+  const handleResume = async (attemptId: string) => {
+    try {
+      await resumeAttemptApi(attemptId);
+      if (quiz?.resourceLinkId) await refreshAttempts(quiz.resourceLinkId);
+    } catch (err: any) {
+      alert(`Resume failed: ${err.message}`);
+    }
+  };
+
+
 
   return (
     <Layout
@@ -90,7 +145,12 @@ export function Dashboard() {
             <h1 className="dashboard-header__title" style={{ fontFamily: 'var(--font-serif)', display: 'inline-block', marginRight: 'var(--space-sm)' }}>{quiz?.title || 'Session Monitoring'}</h1>
             {quiz && <span className="dashboard-header__badge">{quiz.status.toUpperCase()}</span>}
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
+            {quiz?.resourceLinkId && (
+              <Button variant="ghost" onClick={() => navigate(`/teacher/live/${quiz.resourceLinkId}`)}>
+                🔴 Live Monitor
+              </Button>
+            )}
             <Link to="/teacher/quiz-builder" className="btn btn--primary">
               Create/Edit Quiz
             </Link>
@@ -98,7 +158,56 @@ export function Dashboard() {
         </div>
       }
     >
+      {/* Bulk Result Modal */}
+      {bulkResult && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }}>
+          <div className="dashboard-card" style={{ maxWidth: '480px', padding: 'var(--space-2xl)' }}>
+            <h2 style={{ fontFamily: 'var(--font-sans)', marginBottom: 'var(--space-md)' }}>Bulk Approve Results</h2>
+            <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-success)', fontWeight: 600 }}>
+              ✓ {bulkResult.approved.length} approved
+            </p>
+            {bulkResult.skipped.length > 0 && (
+              <div style={{ marginTop: 'var(--space-sm)' }}>
+                <p style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-alert)', fontWeight: 600 }}>
+                  ⚠ {bulkResult.skipped.length} skipped:
+                </p>
+                {bulkResult.skipped.map(s => (
+                  <p key={s.id} style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-ink-muted)', marginLeft: 'var(--space-md)' }}>
+                    {s.id.slice(-8)}: {s.reason}
+                  </p>
+                ))}
+              </div>
+            )}
+            <div style={{ marginTop: 'var(--space-lg)', textAlign: 'right' }}>
+              <Button variant="primary" onClick={() => setBulkResult(null)}>Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="dashboard-content">
+        {/* Bulk approve toolbar */}
+        {awaitingApprovalAttempts.length > 0 && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'var(--space-sm) var(--space-lg)',
+            marginBottom: 'var(--space-md)',
+            background: 'rgba(46, 125, 91, 0.08)',
+            border: '1px solid rgba(46, 125, 91, 0.2)',
+            borderRadius: 'var(--radius-md)',
+          }}>
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 500 }}>
+              {awaitingApprovalAttempts.length} clean attempt{awaitingApprovalAttempts.length !== 1 ? 's' : ''} awaiting approval
+            </span>
+            <Button variant="primary" size="sm" onClick={handleBulkApprove}>
+              Approve All Clean
+            </Button>
+          </div>
+        )}
+
         <div className="dashboard-card" style={{ padding: '0' }}>
           <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
             <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0, flex: '0 0 200px' }}>Student / Attempt ID</h2>
@@ -114,7 +223,7 @@ export function Dashboard() {
             <div style={{ flex: '0 0 80px', textAlign: 'center' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Score</h2>
             </div>
-            <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
+            <div style={{ flex: '0 0 180px', textAlign: 'right' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Actions</h2>
             </div>
           </div>
@@ -125,19 +234,28 @@ export function Dashboard() {
             </div>
           ) : (
             attempts.map((att, i) => {
-              const cfg = getStatusConfig(att) as any;
-              const deEmphasized = isDeEmphasized(att);
+              const cfg = getStatusConfig(att);
+              const resolved = isResolved(att);
               const passbackFailed = hasPassbackFailure(att);
+              const awaitingApprovalState = isAwaitingApproval(att);
+              const state = getAttemptState(att);
+
+              // State badge colors
+              let badgeBg = 'transparent';
+              let badgeColor = 'var(--color-ink-muted)';
+              if (state === 'awaiting_approval') { badgeBg = 'rgba(46, 125, 91, 0.12)'; badgeColor = 'var(--color-success)'; }
+              else if (state === 'awaiting_review') { badgeBg = 'rgba(179, 73, 43, 0.12)'; badgeColor = 'var(--color-alert)'; }
+
               return (
                 <div 
                   key={att._id} 
-                  data-urgency-tier={deEmphasized ? 'finalized' : 'active'}
+                  data-urgency-tier={resolved ? 'finalized' : 'active'}
                   style={{ 
                     display: 'flex', 
                     alignItems: 'center', 
                     padding: 'var(--space-md) var(--space-lg)', 
                     borderBottom: i < attempts.length - 1 ? '1px solid var(--color-border)' : 'none',
-                    opacity: deEmphasized ? 0.55 : 1,
+                    opacity: resolved ? 0.55 : 1,
                     transition: 'opacity var(--transition-base)',
                   }}
                 >
@@ -167,6 +285,20 @@ export function Dashboard() {
                           !
                         </span>
                       )}
+                      {cfg.badge && (
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '1px 6px',
+                          borderRadius: 'var(--radius-full)',
+                          fontSize: '9px',
+                          fontWeight: 700,
+                          background: badgeBg,
+                          color: badgeColor,
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {cfg.badge}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div style={{ flex: 1, paddingLeft: 'var(--space-md)', paddingRight: 'var(--space-xl)' }}>
@@ -183,9 +315,28 @@ export function Dashboard() {
                     {att.incidentCount || 0}
                   </div>
                   <div style={{ flex: '0 0 80px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    {att.finalScore !== null ? att.finalScore : '—'}
+                    {att.finalScore !== null ? att.finalScore : (att.computedScore !== null ? <span style={{ color: 'var(--color-ink-muted)' }}>{att.computedScore}*</span> : '—')}
                   </div>
-                  <div style={{ flex: '0 0 100px', textAlign: 'right' }}>
+                  <div style={{ flex: '0 0 180px', textAlign: 'right', display: 'flex', gap: 'var(--space-xs)', justifyContent: 'flex-end' }}>
+                    {/* Pause/Resume for active attempts */}
+                    {att.status === 'in_progress' && (
+                      att.pausedByTeacher ? (
+                        <Button variant="ghost" size="sm" onClick={() => handleResume(att._id)}>Resume</Button>
+                      ) : (
+                        <Button variant="ghost" size="sm" onClick={() => handlePause(att._id)}>Pause</Button>
+                      )
+                    )}
+                    {/* Approve for clean awaiting-approval attempts */}
+                    {awaitingApprovalState && (
+                      <Button 
+                        variant="primary" 
+                        size="sm"
+                        style={{ background: 'var(--color-success)' }}
+                        onClick={() => handleApprove(att._id)}
+                      >
+                        Approve
+                      </Button>
+                    )}
                     <Button 
                       variant="ghost" 
                       size="sm" 
@@ -204,3 +355,4 @@ export function Dashboard() {
     </Layout>
   );
 }
+

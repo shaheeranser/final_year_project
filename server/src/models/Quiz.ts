@@ -23,6 +23,7 @@ export interface IQuiz extends Document {
   startAt?: Date;
   endAt?: Date;
   attemptDurationMinutes?: number | null;
+  manualOverride: 'none' | 'forced_open' | 'forced_closed';
   studentAccess: {
     mode: 'enrollment' | 'allowlist';
     allowedStudentIds: string[];
@@ -57,6 +58,7 @@ const QuizSchema = new Schema<IQuiz>({
   startAt: { type: Date },
   endAt: { type: Date },
   attemptDurationMinutes: { type: Number, default: null },
+  manualOverride: { type: String, enum: ['none', 'forced_open', 'forced_closed'], default: 'none' },
   studentAccess: {
     mode: { type: String, enum: ['enrollment', 'allowlist'], default: 'enrollment' },
     allowedStudentIds: { type: [String], default: [] },

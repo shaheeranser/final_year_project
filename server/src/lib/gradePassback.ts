@@ -95,6 +95,11 @@ export async function doPassback(attempt: InstanceType<typeof Attempt>): Promise
     await attempt.save();
   } catch (err) {
     console.error(`[gradePassback] AGS submitScore failed for attempt ${attempt._id}:`, err);
+    const e = err as any;
+    if (e.response) {
+      console.error('[gradePassback] Error response body:', e.response.body);
+      console.error('[gradePassback] Error response url:', e.response.url);
+    }
     // Do NOT re-throw — passback failure is non-fatal
   }
 }

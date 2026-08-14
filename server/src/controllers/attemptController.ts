@@ -3,9 +3,7 @@ import { Quiz } from '../models/Quiz.js';
 import { Attempt } from '../models/Attempt.js';
 import { Incident } from '../models/Incident.js';
 import { uploadSnapshot } from '../lib/minio.js';
-import { SOFT_VIOLATION_STRIKE_LIMIT } from '../lib/proctoring.js';
 import { broadcastToQuiz } from '../lib/sse.js';
-import { finalizeAttemptScore } from '../lib/gradePassback.js';
 
 // 3.1 Implement getEligibility
 export const getEligibility = async (req: Request, res: Response): Promise<void> => {
@@ -29,10 +27,18 @@ export const getEligibility = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const now = new Date();
-    if ((quiz.startAt && now < quiz.startAt) || (quiz.endAt && now > quiz.endAt)) {
-      res.status(200).json({ eligible: false, reason: 'OUTSIDE_WINDOW' });
+    // Manual override: forced_closed always blocks, forced_open bypasses window
+    if ((quiz as any).manualOverride === 'forced_closed') {
+      res.status(200).json({ eligible: false, reason: 'MANUALLY_CLOSED' });
       return;
+    }
+
+    const now = new Date();
+    if ((quiz as any).manualOverride !== 'forced_open') {
+      if ((quiz.startAt && now < quiz.startAt) || (quiz.endAt && now > quiz.endAt)) {
+        res.status(200).json({ eligible: false, reason: 'OUTSIDE_WINDOW' });
+        return;
+      }
     }
 
     if (quiz.studentAccess.mode === 'allowlist' && !quiz.studentAccess.allowedStudentIds.includes(studentUserId)) {
@@ -86,8 +92,11 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
     }
 
     if (quiz.status !== 'published') { res.status(403).json({ error: 'NOT_PUBLISHED' }); return; }
+    if ((quiz as any).manualOverride === 'forced_closed') { res.status(403).json({ error: 'MANUALLY_CLOSED' }); return; }
     const now = new Date();
-    if ((quiz.startAt && now < quiz.startAt) || (quiz.endAt && now > quiz.endAt)) { res.status(403).json({ error: 'OUTSIDE_WINDOW' }); return; }
+    if ((quiz as any).manualOverride !== 'forced_open') {
+      if ((quiz.startAt && now < quiz.startAt) || (quiz.endAt && now > quiz.endAt)) { res.status(403).json({ error: 'OUTSIDE_WINDOW' }); return; }
+    }
     if (quiz.studentAccess.mode === 'allowlist' && !quiz.studentAccess.allowedStudentIds.includes(studentUserId)) { res.status(403).json({ error: 'NOT_ENROLLED' }); return; }
 
     const attempts = await Attempt.find({ quizId, studentUserId });
@@ -210,6 +219,11 @@ export const reportIncident = async (req: Request, res: Response): Promise<void>
       res.status(409).json({ error: 'Attempt is not in progress', currentStatus: attempt.status }); return;
     }
 
+    // Reject incident reporting while paused
+    if (attempt.pausedByTeacher) {
+      res.status(400).json({ error: 'Attempt is currently paused by instructor. Incidents cannot be reported while paused.' }); return;
+    }
+
     const incident = new Incident({
       attemptId,
       flagType,
@@ -230,16 +244,10 @@ export const reportIncident = async (req: Request, res: Response): Promise<void>
 
     if (severity === 'soft') {
       attempt.strikeCount += 1;
-      if (attempt.strikeCount >= SOFT_VIOLATION_STRIKE_LIMIT) {
-        attempt.status = 'terminated';
-        attempt.terminationReason = 'strikes';
-        attempt.endedAt = new Date();
-      }
-    } else if (severity === 'hard') {
-      attempt.status = 'terminated';
-      attempt.terminationReason = flagType;
-      attempt.endedAt = new Date();
     }
+    // Hard violations are logged (via Incident) and flag the attempt (needsReview), 
+    // but we no longer auto-terminate the exam. The student can finish, 
+    // and the teacher will decide during review.
 
     await attempt.save();
 
@@ -266,37 +274,38 @@ export const submitAttempt = async (req: Request, res: Response): Promise<void> 
       res.status(409).json({ error: 'Attempt is not in progress', currentStatus: attempt.status }); return;
     }
 
+    // Reject submission while paused
+    if (attempt.pausedByTeacher) {
+      res.status(400).json({ error: 'Attempt is currently paused by instructor. You cannot submit while paused.' }); return;
+    }
+
     attempt.status = 'completed';
     attempt.endedAt = new Date();
     attempt.answers = answers || [];
 
-    await attempt.save();
-
-    if (!attempt.needsReview) {
-      // Compute score and attempt AGS passback via the shared finalize function
-      try {
-        const quiz = await Quiz.findOne({ resourceLinkId: attempt.quizId });
-        if (quiz) {
-          let score = 0;
-          for (const answer of attempt.answers) {
-            const question = quiz.questions.find((q: any) => q.id === answer.questionId);
-            if (question && question.correctOptionId === answer.selectedOptionId) {
-              score += question.score;
-            }
+    // Always compute the score and store as computedScore, but leave finalScore null.
+    // Every attempt now requires explicit teacher approval before finalization.
+    try {
+      const quiz = await Quiz.findOne({ resourceLinkId: attempt.quizId });
+      if (quiz) {
+        let score = 0;
+        for (const answer of attempt.answers) {
+          const question = quiz.questions.find((q: any) => q.id === answer.questionId);
+          if (question && question.correctOptionId === answer.selectedOptionId) {
+            score += question.score;
           }
-          await finalizeAttemptScore(attempt._id.toString(), score);
         }
-      } catch (err) {
-        console.error('Score computation failed:', err);
+        attempt.computedScore = score;
       }
+    } catch (err) {
+      console.error('Score computation failed:', err);
     }
 
-    // Re-fetch the attempt to pick up any changes from finalizeAttemptScore
-    const updatedAttempt = await Attempt.findById(attemptId) || attempt;
+    await attempt.save();
     
-    broadcastToQuiz(updatedAttempt.quizId, 'attempt_updated', updatedAttempt);
+    broadcastToQuiz(attempt.quizId, 'attempt_updated', attempt);
     
-    res.status(200).json(updatedAttempt);
+    res.status(200).json(attempt);
   } catch (error) {
     console.error('submitAttempt error:', error);
     res.status(500).json({ error: 'Internal server error' });

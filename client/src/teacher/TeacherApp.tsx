@@ -9,6 +9,7 @@ import { Routes, Route } from 'react-router-dom';
 import { Dashboard } from './pages/Dashboard';
 import { QuizBuilder } from './pages/QuizBuilder';
 import { ReviewPage } from './pages/ReviewPage';
+import { LiveDashboard } from './pages/LiveDashboard';
 
 export default function TeacherApp() {
   return (
@@ -16,6 +17,8 @@ export default function TeacherApp() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/quiz-builder" element={<QuizBuilder />} />
       <Route path="/review/:attemptId" element={<ReviewPage />} />
+      <Route path="/live/:resourceLinkId" element={<LiveDashboard />} />
     </Routes>
   );
 }
+
