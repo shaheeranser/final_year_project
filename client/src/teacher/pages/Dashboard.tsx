@@ -210,7 +210,7 @@ export function Dashboard() {
 
         <div className="dashboard-card" style={{ padding: '0' }}>
           <div style={{ display: 'flex', alignItems: 'center', padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--color-border)', background: 'var(--color-bg)' }}>
-            <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0, flex: '0 0 200px' }}>Student / Attempt ID</h2>
+            <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0, flex: '0 0 200px' }}>Student</h2>
             <div style={{ flex: 1, paddingLeft: 'var(--space-md)' }}>
               <h2 style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-md)', margin: 0 }}>Status Track</h2>
             </div>
@@ -259,10 +259,10 @@ export function Dashboard() {
                     transition: 'opacity var(--transition-base)',
                   }}
                 >
-                  <div style={{ flex: '0 0 200px', fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
-                    <div style={{ fontSize: '10px', color: 'var(--color-ink-muted)', marginBottom: '4px' }}>{att.studentUserId}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
-                      {att._id}
+                  <div style={{ flex: '0 0 200px', fontFamily: 'var(--font-sans)', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
+                    <div style={{ fontWeight: 600 }}>{att.studentName || `Student #${att.studentUserId}`}</div>
+                    <div style={{ fontSize: '10px', color: 'var(--color-ink-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      {att._id.slice(-8)}
                       {passbackFailed && (
                         <span
                           data-testid="passback-failure-indicator"

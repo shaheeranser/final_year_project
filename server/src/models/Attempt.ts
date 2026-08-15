@@ -18,6 +18,7 @@ export interface IPauseLogEntry {
 export interface IAttempt extends Document {
   quizId: string;
   studentUserId: string;
+  studentName: string | null;
   status: 'not_started' | 'in_progress' | 'terminated' | 'completed';
   terminationReason: 'strikes' | 'camera_lost' | 'tab_switch' | 'time_expired' | 'manually_closed' | 'manual' | string | null;
   startedAt: Date | null;
@@ -66,6 +67,7 @@ const PauseLogEntrySchema = new Schema({
 const AttemptSchema = new Schema<IAttempt>({
   quizId: { type: String, required: true, index: true },
   studentUserId: { type: String, required: true },
+  studentName: { type: String, default: null },
   status: { type: String, enum: ['not_started', 'in_progress', 'terminated', 'completed'], default: 'not_started' },
   terminationReason: { type: String, default: null },
   startedAt: { type: Date, default: null },

@@ -50,7 +50,7 @@ router.post('/quizzes/:resourceLinkId/override', requireTeacher, setQuizOverride
 router.post('/quizzes/:resourceLinkId/bulk-approve', requireTeacher, bulkApprove);
 router.get('/attempts/:attemptId', requireTeacher, getAttemptDetail);
 router.post('/attempts/:attemptId/review', requireTeacher, reviewAttempt);
-router.post('/attempts/:attemptId/retry-passback', retryPassback);
+router.post('/attempts/:attemptId/retry-passback', requireTeacher, retryPassback);
 router.post('/attempts/:attemptId/approve', requireTeacher, approveAttempt);
 router.post('/attempts/:attemptId/pause', requireTeacher, pauseAttempt);
 router.post('/attempts/:attemptId/resume', requireTeacher, resumeAttempt);

@@ -72,34 +72,18 @@ export function LiveDashboard() {
   // ── Preview handlers ─────────────────────────────────────────────
   const handleStartPreview = async (attemptId: string) => {
     try {
+      // Stop any existing preview first
+      if (previewPollRef.current) clearInterval(previewPollRef.current);
+      if (previewCountdownRef.current) clearInterval(previewCountdownRef.current);
+      previewPollRef.current = null;
+      previewCountdownRef.current = null;
+
       const result = await startPreviewApi(attemptId);
-      setPreviewAttemptId(attemptId);
       setPreviewMaxMs(result.maxDurationMs);
-
       setPreviewElapsed(0);
-
-      // Start polling for frames
-      previewPollRef.current = setInterval(async () => {
-        try {
-          const data = await getLatestPreviewApi(attemptId);
-          if (data.previewActive && data.url) {
-            setPreviewUrl(data.url);
-          } else {
-            handleStopPreview();
-          }
-        } catch { /* ignore poll errors */ }
-      }, 1500);
-
-      // Start countdown timer
-      previewCountdownRef.current = setInterval(() => {
-        setPreviewElapsed(prev => {
-          const next = prev + 1000;
-          if (next >= result.maxDurationMs) {
-            handleStopPreview();
-          }
-          return next;
-        });
-      }, 1000);
+      setPreviewUrl(null);
+      // Setting this last triggers the useEffect that starts polling
+      setPreviewAttemptId(attemptId);
     } catch (err: any) {
       alert(`Failed to start preview: ${err.message}`);
     }
@@ -111,26 +95,61 @@ export function LiveDashboard() {
     previewPollRef.current = null;
     previewCountdownRef.current = null;
 
-    if (previewAttemptId) {
-      try { await stopPreviewApi(previewAttemptId); } catch { /* best effort */ }
-    }
+    const idToStop = previewAttemptId;
     setPreviewAttemptId(null);
     setPreviewUrl(null);
-
     setPreviewElapsed(0);
+
+    if (idToStop) {
+      try { await stopPreviewApi(idToStop); } catch { /* best effort */ }
+    }
   }, [previewAttemptId]);
 
-  // Cleanup on unmount
+  // Start/stop polling when previewAttemptId changes
+  useEffect(() => {
+    if (!previewAttemptId) return;
+
+    // Start polling for frames
+    const pollId = setInterval(async () => {
+      try {
+        const data = await getLatestPreviewApi(previewAttemptId);
+        if (data.previewActive && data.url) {
+          setPreviewUrl(data.url);
+        } else {
+          // Preview expired server-side, clean up
+          clearInterval(pollId);
+          clearInterval(countdownId);
+          previewPollRef.current = null;
+          previewCountdownRef.current = null;
+          setPreviewAttemptId(null);
+          setPreviewUrl(null);
+          setPreviewElapsed(0);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 2000);
+    previewPollRef.current = pollId;
+
+    // Start countdown timer
+    const countdownId = setInterval(() => {
+      setPreviewElapsed(prev => prev + 1000);
+    }, 1000);
+    previewCountdownRef.current = countdownId;
+
+    return () => {
+      clearInterval(pollId);
+      clearInterval(countdownId);
+      previewPollRef.current = null;
+      previewCountdownRef.current = null;
+    };
+  }, [previewAttemptId]);
+
+  // Cleanup on unmount only (empty deps)
   useEffect(() => {
     return () => {
       if (previewPollRef.current) clearInterval(previewPollRef.current);
       if (previewCountdownRef.current) clearInterval(previewCountdownRef.current);
-      // Best-effort stop preview on navigate away
-      if (previewAttemptId) {
-        stopPreviewApi(previewAttemptId).catch(() => {});
-      }
     };
-  }, [previewAttemptId]);
+  }, []);
 
   // ── Pause/Resume handlers ─────────────────────────────────────────
   const handlePause = async (attemptId: string) => {
@@ -264,8 +283,8 @@ export function LiveDashboard() {
                     padding: 'var(--space-md) var(--space-lg)', borderBottom: '1px solid var(--color-border)'
                   }}>
                     <div>
-                      <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-ink-muted)' }}>{att.studentUserId}</div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-size-sm)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                      <div style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)' }}>{att.studentName || `Student #${att.studentUserId}`}</div>
+                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--color-ink-muted)', display: 'flex', alignItems: 'center', gap: 'var(--space-xs)', marginTop: '2px' }}>
                         {att._id.slice(-8)}
                         {att.pausedByTeacher && (
                           <span style={{
@@ -318,7 +337,7 @@ export function LiveDashboard() {
                 </div>
                 {previewUrl ? (
                   <img
-                    src={previewUrl}
+                    src={`${previewUrl}&_t=${Date.now()}`}
                     alt="Student preview"
                     style={{ width: '100%', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}
                     crossOrigin="anonymous"
@@ -344,42 +363,74 @@ export function LiveDashboard() {
                 <div style={{ padding: 'var(--space-2xl)', textAlign: 'center', color: 'var(--color-ink-muted)' }}>
                   No incidents reported yet.
                 </div>
-              ) : (
-                liveStatus.recentIncidents.map(inc => (
-                  <div
-                    key={inc._id}
-                    style={{
-                      padding: 'var(--space-md) var(--space-lg)',
-                      borderBottom: '1px solid var(--color-border)',
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => handleStartPreview(inc.attemptId)}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
-                        <span style={{ fontWeight: 600, fontSize: 'var(--font-size-sm)', textTransform: 'capitalize' }}>
-                          {inc.flagType.replace('_', ' ')}
-                        </span>
-                        <span style={{
-                          display: 'inline-block', marginLeft: 'var(--space-xs)',
-                          padding: '1px 6px', borderRadius: 'var(--radius-full)', fontSize: '10px', fontWeight: 600,
-                          background: inc.severity === 'hard' ? 'rgba(179, 73, 43, 0.15)' : 'rgba(179, 146, 43, 0.15)',
-                          color: inc.severity === 'hard' ? 'var(--color-alert)' : 'var(--color-ink-muted)',
-                          textTransform: 'uppercase'
-                        }}>
-                          {inc.severity}
-                        </span>
-                      </div>
-                      <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-ink-muted)' }}>
-                        {new Date(inc.occurredAt).toLocaleTimeString()}
+              ) : (() => {
+                // Group incidents by attemptId
+                const grouped: Record<string, { studentName: string; studentUserId: string; incidents: typeof liveStatus.recentIncidents }> = {};
+                for (const inc of liveStatus.recentIncidents) {
+                  const key = inc.attemptId;
+                  if (!grouped[key]) {
+                    grouped[key] = {
+                      studentName: (inc as any).studentName || `Student #${inc.studentUserId}`,
+                      studentUserId: inc.studentUserId,
+                      incidents: [],
+                    };
+                  }
+                  grouped[key].incidents.push(inc);
+                }
+                return Object.entries(grouped).map(([attemptId, group]) => (
+                  <div key={attemptId} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                    <div style={{
+                      padding: 'var(--space-sm) var(--space-lg)',
+                      background: 'rgba(0,0,0,0.03)',
+                      fontWeight: 600,
+                      fontSize: 'var(--font-size-sm)',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}>
+                      <span>{group.studentName}</span>
+                      <span style={{
+                        fontFamily: 'var(--font-mono)',
+                        fontSize: '10px',
+                        color: 'var(--color-ink-muted)',
+                      }}>
+                        {group.incidents.length} incident{group.incidents.length !== 1 ? 's' : ''}
                       </span>
                     </div>
-                    <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-ink-muted)', marginTop: '2px' }}>
-                      {inc.studentUserId}
-                    </div>
+                    {group.incidents.map(inc => (
+                      <div
+                        key={inc._id}
+                        style={{
+                          padding: 'var(--space-xs) var(--space-lg) var(--space-xs) calc(var(--space-lg) + var(--space-md))',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                        onClick={() => handleStartPreview(inc.attemptId)}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
+                          <span style={{ fontWeight: 500, fontSize: 'var(--font-size-sm)', textTransform: 'capitalize' }}>
+                            {inc.flagType.replace('_', ' ')}
+                          </span>
+                          <span style={{
+                            display: 'inline-block',
+                            padding: '1px 6px', borderRadius: 'var(--radius-full)', fontSize: '10px', fontWeight: 600,
+                            background: inc.severity === 'hard' ? 'rgba(179, 73, 43, 0.15)' : 'rgba(179, 146, 43, 0.15)',
+                            color: inc.severity === 'hard' ? 'var(--color-alert)' : 'var(--color-ink-muted)',
+                            textTransform: 'uppercase'
+                          }}>
+                            {inc.severity}
+                          </span>
+                        </div>
+                        <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-ink-muted)' }}>
+                          {new Date(inc.occurredAt).toLocaleTimeString()}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))
-              )}
+                ));
+              })()}
             </div>
           </div>
         </div>

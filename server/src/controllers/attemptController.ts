@@ -124,6 +124,7 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
     // Extract ltiContext from the LTI IdToken if present
     const token = res.locals.token as any;
     let ltiContext = null;
+    let studentName: string | null = null;
     if (token) {
       ltiContext = {
         platformUrl: token.iss ?? null,
@@ -132,11 +133,13 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
         lineItemUrl: token.platformContext?.endpoint?.lineitem ?? null,
         ltiUserId: token.user ?? null,
       };
+      studentName = token.platformContext?.custom?.username ?? token.userInfo?.name ?? token.userInfo?.given_name ?? null;
     }
 
     const newAttempt = new Attempt({
       quizId,
       studentUserId,
+      studentName,
       ltiContext,
     });
     await newAttempt.save();

@@ -39,6 +39,7 @@ export const getLiveStatus = async (req: Request, res: Response): Promise<void> 
       return {
         ...inc,
         studentUserId: att?.studentUserId ?? 'unknown',
+        studentName: (att as any)?.studentName ?? null,
         attemptId: inc.attemptId,
       };
     });

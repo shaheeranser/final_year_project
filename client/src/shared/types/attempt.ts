@@ -20,6 +20,7 @@ export interface Attempt {
   _id: string;
   quizId: string;
   studentUserId: string;
+  studentName: string | null;
   status: AttemptStatus;
   terminationReason: TerminationReason | string;
   startedAt: string | null;

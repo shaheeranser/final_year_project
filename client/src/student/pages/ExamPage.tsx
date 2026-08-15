@@ -288,7 +288,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       } catch (err) {
         console.error('Status poll failed:', err);
       }
-    }, 7000); // Poll every 7 seconds
+    }, 3000); // Poll every 3 seconds
 
     return () => clearInterval(pollInterval);
   }, [attemptId, status]);
@@ -505,7 +505,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
         </div>
 
         {/* ── Webcam & Detection (Hidden UI, active functionality) ── */}
-        <div className="exam-page__sidebar" style={{ display: 'none' }}>
+        <div className="exam-page__sidebar" style={{ opacity: 0, position: 'absolute', pointerEvents: 'none', zIndex: -1, width: 0, height: 0, overflow: 'hidden' }}>
           <div className="exam-page__video-container">
             <video
               ref={videoRef}

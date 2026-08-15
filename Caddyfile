@@ -6,5 +6,7 @@
 # For local dev, we'll listen on standard HTTP/HTTPS ports.
 # Replace localhost with your domain for production HTTPS.
 :80 {
-    reverse_proxy app:3000
+    reverse_proxy app:3000 {
+        flush_interval -1
+    }
 }

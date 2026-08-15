@@ -20,6 +20,7 @@ export const listAttempts = async (req: Request, res: Response): Promise<void> =
       return {
         _id: attempt._id,
         studentUserId: attempt.studentUserId,
+        studentName: attempt.studentName ?? null,
         status: attempt.status,
         strikeCount: attempt.strikeCount,
         needsReview: attempt.needsReview,
