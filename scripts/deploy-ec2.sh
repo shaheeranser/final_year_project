@@ -91,7 +91,7 @@ EOF
 echo "[5/6] Setting up MoodleHQ Docker..."
 if [ ! -d "moodle-dev/moodle" ]; then
     mkdir -p moodle-dev
-    git clone --depth 1 https://github.com/moodlehq/moodle.git moodle-dev/moodle
+    git clone --depth 1 https://github.com/moodle/moodle.git moodle-dev/moodle
     git clone --depth 1 https://github.com/moodlehq/moodle-docker.git moodle-dev/moodle-docker
     
     cd moodle-dev/moodle-docker

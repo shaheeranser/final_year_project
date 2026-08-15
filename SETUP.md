@@ -82,7 +82,7 @@ Create the local Moodle checkout and wrapper workspace:
 
 ```bash
 mkdir -p moodle-dev
-git clone https://github.com/moodlehq/moodle.git moodle-dev/moodle
+git clone https://github.com/moodle/moodle.git moodle-dev/moodle
 git clone https://github.com/moodlehq/moodle-docker.git moodle-dev/moodle-docker
 cd moodle-dev/moodle-docker
 export MOODLE_DOCKER_WWWROOT=../moodle
