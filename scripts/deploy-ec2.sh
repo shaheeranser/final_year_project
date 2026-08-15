@@ -97,12 +97,14 @@ if [ ! -d "moodle-dev/moodle" ]; then
     cd moodle-dev/moodle-docker
     cp config.docker-template.php ../moodle/config.php
     
-    # Update Moodle config to trust proxy headers from Caddy
-    # Caddy will pass X-Forwarded-Proto and X-Forwarded-Host
-    echo "// Additional configuration for EC2 Reverse Proxy
-\$CFG->sslproxy = true;
-\$CFG->reverseproxy = true;
-" >> ../moodle/config.php
+    # Update Moodle config to trust proxy headers from Caddy and use dynamic host
+    # Must be inserted BEFORE require_once('lib/setup.php')
+    sed -i "/require_once/i \\
+// Additional configuration for EC2 Reverse Proxy\\
+\$CFG->sslproxy = true;\\
+\$CFG->reverseproxy = false;\\
+\$CFG->wwwroot = 'https://' . \$_SERVER['HTTP_HOST'];\\
+" ../moodle/config.php
 
     cd "$PROJECT_DIR"
 fi
@@ -118,7 +120,7 @@ cd "$PROJECT_DIR/moodle-dev/moodle-docker"
 export MOODLE_DOCKER_WWWROOT=../moodle
 export MOODLE_DOCKER_DB=pgsql
 # Explicitly use sudo docker compose if user is not in docker group properly yet
-sudo -E bin/moodle-docker-compose up -d
+sudo MOODLE_DOCKER_WWWROOT=../moodle MOODLE_DOCKER_DB=pgsql bin/moodle-docker-compose up -d
 
 # Wait for Moodle DB (optional, but good practice)
 echo "Waiting for Moodle Database to initialize..."
@@ -134,7 +136,7 @@ echo "=========================================="
 echo ""
 echo "Next Steps:"
 echo "1. Run Moodle Database installation (ONLY ONCE for a fresh DB):"
-echo "   cd moodle-dev/moodle-docker && sudo -E bin/moodle-docker-compose exec webserver php admin/cli/install_database.php --agree-license --fullname=\"EC2 Moodle\" --shortname=\"ec2_moodle\" --summary=\"EC2 Moodle\" --adminpass=\"test\" --adminemail=\"admin@example.com\""
+echo "   cd moodle-dev/moodle-docker && sudo MOODLE_DOCKER_WWWROOT=../moodle MOODLE_DOCKER_DB=pgsql bin/moodle-docker-compose exec webserver php admin/cli/install_database.php --agree-license --fullname=\"EC2 Moodle\" --shortname=\"ec2_moodle\" --summary=\"EC2 Moodle\" --adminpass=\"test\" --adminemail=\"admin@example.com\""
 echo ""
 echo "2. Access your applications:"
 echo "   App:    https://$APP_DOMAIN"
