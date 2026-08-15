@@ -165,11 +165,13 @@ export function EligibilityGate({ resourceLinkId, onAttemptReady }: Props) {
       <Layout header={<div className="exam-header"><h1>Exam Instructions</h1></div>}>
         <div style={{ padding: 'var(--space-2xl)', maxWidth: 800, margin: '0 auto' }}>
           <h2 style={{ fontFamily: 'var(--font-serif)', marginBottom: 'var(--space-md)' }}>Please read carefully before starting</h2>
-          <ul style={{ fontSize: 'var(--font-size-md)', lineHeight: 1.6, marginBottom: 'var(--space-xl)' }}>
-            <li><strong>Do not switch tabs or windows.</strong> This will be flagged and may terminate your exam.</li>
-            <li><strong>Ensure your face is always visible.</strong> The AI will continuously monitor your presence. If you leave the frame or cover the camera, the exam will be terminated immediately.</li>
-            <li><strong>Stay well-lit.</strong> Ensure your room has adequate lighting without extreme glare.</li>
-            <li><strong>No other people</strong> are allowed in the camera frame during the exam.</li>
+          <ul style={{ fontSize: 'var(--font-size-md)', lineHeight: 1.8, marginBottom: 'var(--space-xl)', display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
+            <li><strong>Single Session Rule:</strong> Once you start, you must complete the exam in one sitting. You cannot leave and resume later.</li>
+            <li><strong>Tab Closing = Immediate Auto-Submission:</strong> Closing your browser tab, window, or navigating away will <strong>automatically submit your exam</strong> immediately as-is, and you will not be allowed to attempt it again.</li>
+            <li><strong>Tab & App Switching Recorded:</strong> Switching tabs, minimizing the window, or switching to another application is actively logged and reported to your instructor.</li>
+            <li><strong>Continuous Camera Monitoring:</strong> Keep your camera active and your face centered and clearly visible at all times. Ensure your room is well-lit.</li>
+            <li><strong>Solo Environment & Workspace:</strong> No other people or unauthorized objects (cell phones, secondary devices, books) are allowed in the camera view.</li>
+            <li><strong>Timer Auto-Submission:</strong> When the exam countdown timer expires, your answers will be submitted automatically.</li>
           </ul>
           <div style={{ textAlign: 'center' }}>
             <Button variant="primary" size="lg" onClick={() => setStep('precheck')}>

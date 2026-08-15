@@ -22,6 +22,7 @@ export const listAttempts = async (req: Request, res: Response): Promise<void> =
         studentUserId: attempt.studentUserId,
         studentName: attempt.studentName ?? null,
         status: attempt.status,
+        submissionType: attempt.submissionType ?? null,
         strikeCount: attempt.strikeCount,
         needsReview: attempt.needsReview,
         reviewOutcome: attempt.reviewOutcome,

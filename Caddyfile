@@ -5,8 +5,12 @@
 # The address will be populated automatically by Caddy if you use a domain name.
 # For local dev, we'll listen on standard HTTP/HTTPS ports.
 # Replace localhost with your domain for production HTTPS.
-:80 {
+{$APP_DOMAIN::80} {
     reverse_proxy app:3000 {
         flush_interval -1
     }
+}
+
+{$MOODLE_DOMAIN:http://localhost:8080} {
+    reverse_proxy host.docker.internal:8000
 }

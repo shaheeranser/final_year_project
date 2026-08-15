@@ -49,7 +49,15 @@ export const getEligibility = async (req: Request, res: Response): Promise<void>
     const attempts = await Attempt.find({ quizId: resourceLinkId, studentUserId });
     const inProgressAttempt = attempts.find((a: any) => a.status === 'in_progress');
     if (inProgressAttempt) {
-      res.status(200).json({ eligible: true, resumable: true, attemptId: inProgressAttempt._id });
+      // Students cannot leave an attempt in between and return later.
+      // Auto-finalize any abandoned attempt as completed with submissionType 'tab_closed'.
+      inProgressAttempt.status = 'completed';
+      inProgressAttempt.endedAt = new Date();
+      inProgressAttempt.submissionType = 'tab_closed';
+      await inProgressAttempt.save();
+      broadcastToQuiz(inProgressAttempt.quizId, 'attempt_updated', inProgressAttempt);
+
+      res.status(200).json({ eligible: false, reason: 'ALREADY_COMPLETED' });
       return;
     }
 
@@ -102,7 +110,13 @@ export const createAttempt = async (req: Request, res: Response): Promise<void> 
     const attempts = await Attempt.find({ quizId, studentUserId });
     const inProgressAttempt = attempts.find((a: any) => a.status === 'in_progress');
     if (inProgressAttempt) {
-      res.status(200).json(inProgressAttempt);
+      inProgressAttempt.status = 'completed';
+      inProgressAttempt.endedAt = new Date();
+      inProgressAttempt.submissionType = 'tab_closed';
+      await inProgressAttempt.save();
+      broadcastToQuiz(quizId, 'attempt_updated', inProgressAttempt);
+
+      res.status(403).json({ error: 'ALREADY_COMPLETED' });
       return;
     }
 
@@ -267,7 +281,7 @@ export const reportIncident = async (req: Request, res: Response): Promise<void>
 export const submitAttempt = async (req: Request, res: Response): Promise<void> => {
   try {
     const { attemptId } = req.params;
-    const { answers } = req.body;
+    const { answers, submissionType } = req.body;
     const studentUserId = res.locals.token?.user;
 
     const attempt = await Attempt.findById(attemptId);
@@ -283,8 +297,9 @@ export const submitAttempt = async (req: Request, res: Response): Promise<void> 
     }
 
     attempt.status = 'completed';
+    attempt.submissionType = ['manual', 'timeout', 'tab_closed'].includes(submissionType) ? submissionType : 'manual';
     attempt.endedAt = new Date();
-    attempt.answers = answers || [];
+    attempt.answers = answers || attempt.answers || [];
 
     // Always compute the score and store as computedScore, but leave finalScore null.
     // Every attempt now requires explicit teacher approval before finalization.

@@ -20,6 +20,7 @@ export interface IAttempt extends Document {
   studentUserId: string;
   studentName: string | null;
   status: 'not_started' | 'in_progress' | 'terminated' | 'completed';
+  submissionType: 'manual' | 'timeout' | 'tab_closed' | 'auto_terminated' | null;
   terminationReason: 'strikes' | 'camera_lost' | 'tab_switch' | 'time_expired' | 'manually_closed' | 'manual' | string | null;
   startedAt: Date | null;
   endedAt: Date | null;
@@ -69,6 +70,7 @@ const AttemptSchema = new Schema<IAttempt>({
   studentUserId: { type: String, required: true },
   studentName: { type: String, default: null },
   status: { type: String, enum: ['not_started', 'in_progress', 'terminated', 'completed'], default: 'not_started' },
+  submissionType: { type: String, enum: ['manual', 'timeout', 'tab_closed', 'auto_terminated', null], default: null },
   terminationReason: { type: String, default: null },
   startedAt: { type: Date, default: null },
   endedAt: { type: Date, default: null },

@@ -224,6 +224,44 @@ Keep `docker compose logs -f app` open during both launches and confirm there ar
 3. The Moodle external tool version dropdown defaults to `LTI 1.0/1.1`. Switch it to `LTI 1.3` before filling in the manual registration form.
 4. Free-tier tunnel URLs often change after a restart. If your tunnel URL changes, update the Moodle tool registration and the `PLATFORM_*` values in `server/.env` before testing again.
 
+## 14. Cross-Device Testing (LAN / Tunnels)
+
+If you need to test the LTI flow from another device (like a phone or another laptop on the same network), you must make both the app and Moodle externally reachable. Do not try to fight LAN firewall rules or bind Moodle to your local IP—using tunnels is much cleaner and avoids `ltijs` issuer mismatch traps.
+
+1. **Start two tunnels**: 
+   - One for Moodle (`ngrok http 8000` or equivalent)
+   - One for your app (`ngrok http 3000` or equivalent)
+2. **Update the Moodle tool registration** (Site admin -> Plugins -> External tool -> Manage tools):
+   - Edit the tool to use the new app tunnel URL for the Tool URL, Initiate login URL, Redirect URI(s), and Public keyset URL.
+3. **Update `server/.env`**:
+   - Change `PLATFORM_URL`, `PLATFORM_AUTH_ENDPOINT`, `PLATFORM_TOKEN_ENDPOINT`, and `PLATFORM_KEYSET_ENDPOINT` to use the Moodle tunnel URL (the values shown after saving the tool).
+4. **Restart the app**: 
+   - `docker compose up -d --force-recreate app` so it registers with the new tunnel URLs.
+5. **Watch for issuer mismatch**: 
+   - When testing from the other device, you **must** access Moodle via its tunnel URL. If you mix and match (e.g. logging into Moodle via `localhost:8000` on your laptop, but the app uses the tunnel), Moodle will assert a different `iss` value than what the app registered, causing the launch to fail.
+6. **Test**: 
+   - On the other device, load the Moodle tunnel URL, log in, click the activity, and confirm it launches into the app's tunnel URL.
+
+Note: Docker's internal networking (`examnet` bridge, etc.) is unrelated to this and handles container-to-container traffic just fine.
+
+## 15. Deploying to EC2 for Demo
+
+To deploy the entire stack (both Moodle and the App) to an EC2 instance for demonstration purposes, we have provided an automated setup script. This script utilizes `<EC2-PUBLIC-IP>.nip.io` to automatically provision valid HTTPS certificates via Let's Encrypt for both applications.
+
+1. **Launch an EC2 Instance:** Ubuntu 24.04 (or 22.04) is recommended. Ensure the Security Group allows inbound traffic on ports `80`, `443`, and `22`.
+2. **Clone the repository:**
+   ```bash
+   git clone <repo-url> final_year_project
+   cd final_year_project
+   ```
+3. **Run the deployment script:**
+   ```bash
+   bash scripts/deploy-ec2.sh
+   ```
+   The script will install Docker, configure dynamic domains, set up `moodle-docker`, and start both stacks. It takes a few minutes to complete.
+4. **Follow the post-deployment steps:**
+   At the end of the script execution, it will provide instructions on how to run the one-time Moodle database initialization, what your new URLs are, and remind you to perform the LTI 1.3 registration with these new HTTPS URLs.
+
 ## Resetting to a clean state
 
 Use the right reset path for the situation. Same-device restarts and brand-new-device setups are not the same thing.

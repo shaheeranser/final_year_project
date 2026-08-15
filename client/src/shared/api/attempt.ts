@@ -67,11 +67,15 @@ export const reportIncident = async (attemptId: string, payload: IncidentPayload
   return res.json();
 };
 
-export const submitAttempt = async (attemptId: string, answers: Answer[]): Promise<Attempt> => {
+export const submitAttempt = async (
+  attemptId: string, 
+  answers: Answer[], 
+  submissionType: 'manual' | 'timeout' | 'tab_closed' = 'manual'
+): Promise<Attempt> => {
   const res = await fetch(`/api/attempts/${attemptId}/submit`, {
     method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ answers })
+    body: JSON.stringify({ answers, submissionType })
   });
   if (!res.ok) throw new Error(`Submit attempt failed: ${res.statusText}`);
   return res.json();

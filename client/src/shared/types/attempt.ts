@@ -22,6 +22,7 @@ export interface Attempt {
   studentUserId: string;
   studentName: string | null;
   status: AttemptStatus;
+  submissionType?: 'manual' | 'timeout' | 'tab_closed' | 'auto_terminated' | null;
   terminationReason: TerminationReason | string;
   startedAt: string | null;
   endedAt: string | null;

@@ -24,7 +24,7 @@ import { TerminatedScreen } from './TerminatedScreen';
 import { reportIncident, submitAttempt, fetchQuizForStudent, fetchAttemptStatus, uploadPreviewFrame } from '../../shared/api/attempt';
 import type { StudentQuiz } from '../../shared/api/attempt';
 import type { Answer } from '../../shared/types/attempt';
-import { captureSnapshot } from '../lib/snapshot';
+import { captureSnapshot, capturePreviewSnapshot } from '../lib/snapshot';
 
 type ExamStatus = 'loading' | 'active' | 'warning' | 'terminated' | 'submitted';
 
@@ -48,6 +48,8 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   const [quiz, setQuiz] = useState<StudentQuiz | null>(null);
   const [quizError, setQuizError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const answersRef = useRef<Record<string, string>>({});
+  answersRef.current = answers;
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
   // Timer — uses quiz.attemptDurationMinutes when available, else 60 minutes
@@ -265,16 +267,14 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
       setTimeLeft(prev => {
         if (prev === null || prev <= 1) {
           clearInterval(interval);
-          setStatus('terminated');
-          setTerminationReason('time_expired');
-          report('time_expired', 'hard');
+          handleSubmit('timeout');
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(interval);
-  }, [status, report, timeLeft, isPaused]);
+  }, [status, timeLeft, isPaused]);
 
   // ── Status Polling (pause & preview) ──────────────────────────────
   useEffect(() => {
@@ -293,18 +293,18 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
     return () => clearInterval(pollInterval);
   }, [attemptId, status]);
 
-  // ── Preview Frame Upload ──────────────────────────────────────────
+  // ── Preview Frame Upload (5 FPS live preview) ──────────────────────
   useEffect(() => {
     if (!isPreviewActive || !videoRef.current) return;
 
     const frameInterval = setInterval(() => {
       if (videoRef.current) {
-        const frame = captureSnapshot(videoRef.current);
+        const frame = capturePreviewSnapshot(videoRef.current);
         if (frame) {
           uploadPreviewFrame(attemptId, frame).catch(() => {});
         }
       }
-    }, 1500); // Post frame every 1.5 seconds
+    }, 200); // 5 FPS (every 200ms)
 
     return () => clearInterval(frameInterval);
   }, [isPreviewActive, attemptId]);
@@ -315,22 +315,59 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
   };
 
   // ── Submit Attempt ────────────────────────────────────────────────
-  const handleSubmit = async () => {
+  const handleSubmit = useCallback(async (submissionType: 'manual' | 'timeout' | 'tab_closed' = 'manual') => {
     if (!quiz) return;
 
-    const answerList: Answer[] = Object.entries(answers).map(([questionId, selectedOptionId]) => ({
+    const answerList: Answer[] = Object.entries(answersRef.current).map(([questionId, selectedOptionId]) => ({
       questionId,
       selectedOptionId,
     }));
 
     try {
-      await submitAttempt(attemptId, answerList);
+      await submitAttempt(attemptId, answerList, submissionType);
       setStatus('submitted');
     } catch (err) {
       console.error('Failed to submit attempt', err);
-      alert('Failed to submit exam');
+      if (submissionType === 'manual') alert('Failed to submit exam');
     }
-  };
+  }, [attemptId, quiz]);
+
+  // ── Tab Close / Window Leave Auto-Submit ────────────────────────────
+  useEffect(() => {
+    if (status !== 'active') return;
+
+    const handleTabClose = () => {
+      const answerList: Answer[] = Object.entries(answersRef.current).map(([questionId, selectedOptionId]) => ({
+        questionId,
+        selectedOptionId,
+      }));
+      const ltik = sessionStorage.getItem('ltik');
+      const payload = JSON.stringify({ answers: answerList, submissionType: 'tab_closed' });
+
+      try {
+        fetch(`/api/attempts/${attemptId}/submit`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(ltik ? { Authorization: `Bearer ${ltik}` } : {})
+          },
+          body: payload,
+          keepalive: true,
+        }).catch(() => {});
+      } catch {
+        const blob = new Blob([payload], { type: 'application/json' });
+        navigator.sendBeacon(`/api/attempts/${attemptId}/submit`, blob);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleTabClose);
+    window.addEventListener('pagehide', handleTabClose);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleTabClose);
+      window.removeEventListener('pagehide', handleTabClose);
+    };
+  }, [attemptId, status]);
 
   // ── Render ────────────────────────────────────────────────────────
 
@@ -390,7 +427,7 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
               <span style={{ fontFamily: 'var(--font-sans)', fontSize: 'var(--font-size-sm)', color: 'var(--color-ink-muted)' }}>
                 {answeredCount}/{totalQuestions} answered
               </span>
-              <Button onClick={handleSubmit} variant="primary">Submit Exam</Button>
+              <Button onClick={() => handleSubmit('manual')} variant="primary">Submit Exam</Button>
             </div>
           </div>
         ) : undefined
@@ -474,13 +511,21 @@ export function ExamPage({ attemptId, resourceLinkId }: ExamPageProps) {
                 >
                   ← Previous
                 </Button>
-                <Button
-                  variant="ghost"
-                  disabled={currentQuestionIndex >= totalQuestions - 1}
-                  onClick={() => setCurrentQuestionIndex(i => i + 1)}
-                >
-                  Next →
-                </Button>
+                {currentQuestionIndex === totalQuestions - 1 ? (
+                  <Button
+                    variant="primary"
+                    onClick={() => handleSubmit('manual')}
+                  >
+                    Submit Exam
+                  </Button>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    onClick={() => setCurrentQuestionIndex(i => i + 1)}
+                  >
+                    Next →
+                  </Button>
+                )}
               </div>
             </div>
           )}

@@ -126,7 +126,7 @@ export function LiveDashboard() {
           setPreviewElapsed(0);
         }
       } catch { /* ignore poll errors */ }
-    }, 2000);
+    }, 200); // 5 FPS (every 200ms)
     previewPollRef.current = pollId;
 
     // Start countdown timer
@@ -337,7 +337,7 @@ export function LiveDashboard() {
                 </div>
                 {previewUrl ? (
                   <img
-                    src={`${previewUrl}&_t=${Date.now()}`}
+                    src={previewUrl}
                     alt="Student preview"
                     style={{ width: '100%', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)' }}
                     crossOrigin="anonymous"

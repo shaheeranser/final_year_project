@@ -263,6 +263,18 @@ export function Dashboard() {
                     <div style={{ fontWeight: 600 }}>{att.studentName || `Student #${att.studentUserId}`}</div>
                     <div style={{ fontSize: '10px', color: 'var(--color-ink-muted)', marginTop: '2px', fontFamily: 'var(--font-mono)', display: 'flex', alignItems: 'center', gap: 'var(--space-xs)' }}>
                       {att._id.slice(-8)}
+                      {att.submissionType && (
+                        <span style={{
+                          fontSize: '9px',
+                          color: att.submissionType === 'tab_closed' ? 'var(--color-alert)' : 'var(--color-ink-muted)',
+                          background: 'rgba(0,0,0,0.05)',
+                          padding: '1px 4px',
+                          borderRadius: '3px',
+                          fontStyle: 'italic',
+                        }}>
+                          {att.submissionType === 'tab_closed' ? 'Tab Closed' : att.submissionType === 'timeout' ? 'Timeout' : 'Manual'}
+                        </span>
+                      )}
                       {passbackFailed && (
                         <span
                           data-testid="passback-failure-indicator"
